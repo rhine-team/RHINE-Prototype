@@ -1,4 +1,4 @@
- # Prototype Implementation of Rains Delegation Authentication Protocol. 
+ # Prototype Implementation of RHINE Offline Authentication Protocol. 
 
 **Code in cyrill-k/trustflex directory is copied from https://github.com/cyrill-k/trustflex**
 
@@ -96,3 +96,78 @@ map-server address `172.18.0.5`.
 Check your container addresses: \
 `docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' map-server` \
 `docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' log-server`
+
+
+## Setup step by step (toy example)
+
+### Step 1: setup repo and dependencies
+
+clone `github.com/cyrill-k/trillian` and `github.com/robinburkhard/dns` into your `/home/user/go/src/github.com/` folder.
+
+Change paths to replace in `go.mod`
+
+
+### Step 2: setup F-PKI environment
+
+clone ``github.com/cyrill-k/trustflex-docker``
+
+add ``EXPOSE 8090`` and ``EXPOSE 8094`` to ``Go/Dockerfile``
+
+Run `docker-compose up` in repo folder to start
+
+Access the container: ``docker exec -i -t experiment bash`` and run `make createmap` and `make createtree` and `make map_initial`
+
+read out `logid1 mapid1 logpk1.pem mapk1.pem` in `/mnt/config/`
+
+### Step 3: update and create configs for your F-PKI setup
+
+change at least:
+
+```go
+MAP_PK_PATH     = "testdata/mappk1.pem"
+LOG_PK_PATH     = "testdata/logpk1.pem"
+MAP_ID          = 3213023363744691885
+LOG_ID          = 8493809986858120401
+```
+
+in `offlineAuth/test/rainsdeleg_test.go` to fit your f-pki setup.
+
+Then run the `TestCreateDemoFiles` function in to create necessary configs for to run a manual toy example. Alternatively use `TestFull` function to test automatically.
+
+### Step 4 (optional): manual toy example
+
+run `make` to create the binaries in `/build`
+
+run ca:
+
+``cd test ``
+
+``../build/ca testfulldata/ca.conf``
+
+
+run checker:
+
+``cd test ``
+
+``../build/checker testfulldata/checker.conf ``
+
+
+child generate key and csr:
+
+``../build/keyGen Ed25519 testfulldata/ethz_key.pem ``
+
+``../build/child NewDlg Ed25519 testfulldata/ethz_key.pem --zone ethz.ch1.rhine --out testfulldata ``
+
+parse:
+``openssl req -text -noout -in testfulldata/ethz.ch1.rhine_Csr.pem``
+
+
+parent run newdlg :
+
+
+`` ../build/parent testfulldata/tld.conf --NewDlg testfulldata/ethz.ch1_Csr.pem ``
+
+parese:
+``openssl x509 -text -noout -in testfulldata/tld.cert ``
+
+``openssl x509 -text -noout -in testfulldata/ethz.ch1.rhine_Cert.pem ``
