@@ -1,23 +1,22 @@
 package main
 
 import (
+	"clientlib/rhine"
 	"fmt"
 	"github.com/miekg/dns"
-	"clientlib/rhine"
 	"strings"
 )
 
 const (
 	DNSrhineCertPrefix = "_rhinecert."
-	Resolver = "172.17.0.2"
+	Resolver           = "localhost"
 )
 
 type Assertion struct {
-	atype string
-	answer string
+	atype     string
+	answer    string
 	signature string
 }
-
 
 func main() {
 
@@ -27,24 +26,23 @@ func main() {
 	m.SetQuestion(query, dns.TypeTXT)
 
 	c := new(dns.Client)
-	assertion, _, err := c.Exchange(m, Resolver+":53")
+	assertion, _, err := c.Exchange(m, Resolver+":100")
 	if err != nil {
 		fmt.Println(err)
 	}
 	fmt.Println(assertion.Answer)
 
-	txt := rhine.QueryRCertDNS(strings.SplitN(query, ".", 2)[1], Resolver)
+	txt, _ := rhine.QueryRCertDNS(strings.SplitN(query, ".", 2)[1], Resolver, "100")
+
+	fmt.Println(txt.Txt)
 
 	_, _, pkey := rhine.ParseVerifyRhineCertTxtEntry(txt)
 
 	fmt.Println(pkey)
 
-	assertiontxt, _ := assertion.Answer[0].(*dns.TXT)
+	//assertiontxt, _ := assertion.Answer[0].(*dns.TXT)
 
-
-	ok := rhine.VerifyAssertions(pkey, []*dns.TXT{assertiontxt})
-	fmt.Println(ok)
-
+	//ok := rhine.VerifyAssertions(pkey, []*dns.TXT{assertiontxt})
+	//fmt.Println(ok)
 
 }
-

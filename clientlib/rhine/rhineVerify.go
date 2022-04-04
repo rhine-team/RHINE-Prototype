@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"github.com/miekg/dns"
 	"log"
@@ -13,6 +12,8 @@ import (
 
 const (
 	DNSrhineCertPrefix = "_rhinecert."
+	txtrhinecertpredix = "rhineCert Ed25519"
+	txtsigvalueprefix  = "rhineSig "
 )
 
 func VerifyAssertions(pkey ed25519.PublicKey, assertions []*dns.TXT) bool {
@@ -39,13 +40,13 @@ func VerifyAssertion(pkey ed25519.PublicKey, txt *dns.TXT) bool {
 	return true
 }
 
-func QueryRCertDNS(apex string, resolver string) (*dns.TXT, *dns.Msg) {
+func QueryRCertDNS(apex string, resolver string, port string) (*dns.TXT, *dns.Msg) {
 	fmt.Println(apex)
 	m := new(dns.Msg)
 	m.SetQuestion(DNSrhineCertPrefix+apex, dns.TypeTXT)
 
 	c := new(dns.Client)
-	certtxt, _, err := c.Exchange(m, resolver+":53")
+	certtxt, _, err := c.Exchange(m, resolver+":"+port)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -63,18 +64,15 @@ func QueryRCertDNS(apex string, resolver string) (*dns.TXT, *dns.Msg) {
 func ParseVerifyRhineCertTxtEntry(txt *dns.TXT) (error, *x509.Certificate, ed25519.PublicKey) {
 	//TODO support other key types
 	entries := txt.Txt
-
 	entry := strings.Join(entries, " ")
-	entry = strings.ReplaceAll(entry, " ", "")
+	certstringchunks := strings.SplitAfter(entry, txtrhinecertpredix)[1:]
+	encodedcert := strings.Join(certstringchunks, "")
+	encodedcert = strings.ReplaceAll(encodedcert, " ", "")
+
 	name := txt.Header().Name
 	apexname := strings.SplitAfter(name, DNSrhineCertPrefix)[1]
-	if !strings.HasPrefix(entry, "rhine_cert=") {
-		return errors.New("Wrong attribute"), nil, nil
-	}
 
-	certstring := strings.SplitAfter(entry, "rhine_cert=")[1]
-
-	certdecoded, _ := base64.StdEncoding.DecodeString(certstring)
+	certdecoded, _ := base64.StdEncoding.DecodeString(encodedcert)
 
 	cert, err := x509.ParseCertificate(certdecoded)
 	if err != nil {
@@ -96,5 +94,52 @@ func ParseVerifyRhineCertTxtEntry(txt *dns.TXT) (error, *x509.Certificate, ed255
 	}
 
 	return nil, cert, cert.PublicKey.(ed25519.PublicKey)
+
+}
+
+func GroupRhineServerResp(resp dns.Msg) ([]dns.RR, *dns.TXT, *dns.TXT) {
+
+	qtype := resp.Question[0].Qtype
+	qname := resp.Question[0].Name
+
+	answerRRs := []dns.RR{}
+	var sigRR *dns.TXT
+	var certRR *dns.TXT
+
+	for _, rr := range resp.Answer {
+
+		if rr.Header().Rrtype == dns.TypeTXT {
+			rrtxt, _ := rr.(*dns.TXT)
+			if strings.HasPrefix(rr.Header().Name, DNSrhineCertPrefix) && strings.HasPrefix(rrtxt.Txt[0], txtrhinecertpredix) {
+				certRR, _ = rr.(*dns.TXT)
+			} else if qname == rr.Header().Name && strings.HasPrefix(rrtxt.Txt[0], txtsigvalueprefix+dns.TypeToString[uint16(qtype)]) {
+				sigRR, _ = rr.(*dns.TXT)
+			}
+		}
+
+		if rr.Header().Rrtype == qtype {
+			answerRRs = append(answerRRs, rr)
+		}
+	}
+
+	return answerRRs, sigRR, certRR
+}
+
+func VerifySig(pkey ed25519.PublicKey, rrs []dns.RR, sig *dns.TXT) bool {
+	messagestring := ""
+	for _, rr := range rrs {
+		messagestring += rr.String()
+	}
+	message := []byte(messagestring)
+
+	entries := sig.Txt
+	entry := strings.Join(entries, " ")
+	sigstringchunks := strings.SplitAfter(entry, txtsigvalueprefix+dns.TypeToString[(rrs[0].Header().Rrtype)])[1:]
+	encodedsig := strings.Join(sigstringchunks, "")
+	encodedsig = strings.ReplaceAll(encodedsig, " ", "")
+
+	sigdecoded, _ := base64.StdEncoding.DecodeString(encodedsig)
+
+	return ed25519.Verify(pkey, message, sigdecoded)
 
 }
