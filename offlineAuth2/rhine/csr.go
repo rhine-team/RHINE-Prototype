@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// csr object holds additional rhine-related info, which will be added as extension to actual x509 csr
 type Csr struct {
 	zone      ZoneOwner
 	ca        Authority
