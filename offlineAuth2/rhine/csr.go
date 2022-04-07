@@ -97,6 +97,9 @@ func FindCSRExt(exts []pkix.Extension) (CsrExt, error) {
 }
 
 func VerifyCSR(csr []byte) (*Csr, error) {
+
+	// takes in a signed x509 certifiate request, parses it, checks signature, parses extension and returns as Csr object
+
 	var csrRequest *x509.CertificateRequest
 	csrRequest, err := x509.ParseCertificateRequest(csr)
 	if err != nil {

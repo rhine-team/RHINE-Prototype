@@ -50,8 +50,20 @@ func (zm ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
 	return csr, nil
 }
 
-func (zm ZoneManager) CreatePSR() {
+func (zm ZoneManager) CreatePSR(csr *Csr) *Psr {
+	psr := Psr{
+		csr:        csr,
+		psignedcsr: RhineSig{},
+		pcert:      *zm.rcert,
+		dsp:        nil,
+	}
 
+	psr.psignedcsr.Data = csr.signedcsr
+	psr.psignedcsr.Sign(zm.privkey)
+
+	// dsp proof ret here?
+
+	return &psr
 }
 
 // dsproofret
