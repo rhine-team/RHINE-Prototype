@@ -1,8 +1,8 @@
 package rhine
 
 import (
-	"crypto/x509"
 	"errors"
+	"github.com/google/certificate-transparency-go/x509"
 )
 
 type Psr struct {
