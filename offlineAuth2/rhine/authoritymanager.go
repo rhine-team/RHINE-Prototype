@@ -2,7 +2,9 @@ package rhine
 
 import (
 	"crypto/rand"
+	"encoding/asn1"
 	"github.com/google/certificate-transparency-go/x509"
+	"github.com/google/certificate-transparency-go/x509/pkix"
 	"math/big"
 	"time"
 )
@@ -13,7 +15,7 @@ type AuthorityManager struct {
 	cacert  *x509.Certificate
 }
 
-func (am AuthorityManager) CreateTBSCert(psr *Psr) {
+func (am AuthorityManager) CreatePoisonedCert(psr *Psr) *x509.Certificate {
 
 	certTemplate := x509.Certificate{
 		SerialNumber: big.NewInt(123),
@@ -28,8 +30,16 @@ func (am AuthorityManager) CreateTBSCert(psr *Psr) {
 
 	certTemplate.ExtraExtensions = append(certTemplate.ExtraExtensions, rhinext)
 
+	certTemplate.Extensions = append(certTemplate.Extensions, pkix.Extension{
+		Id:       x509.OIDExtensionCTPoison,
+		Critical: true,
+		Value:    asn1.NullBytes,
+	})
+
 	certbytes, _ := x509.CreateCertificate(rand.Reader, &certTemplate, am.cacert, psr.csr.csr.PublicKey, am.privkey)
 
 	cert, _ := x509.ParseCertificate(certbytes)
+
+	return cert
 
 }

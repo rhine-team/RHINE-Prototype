@@ -1,6 +1,8 @@
 package rhine
 
-import "crypto"
+import (
+	"crypto"
+)
 
 type Log struct {
 	Name   string

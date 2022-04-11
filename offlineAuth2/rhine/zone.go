@@ -1,6 +1,8 @@
 package rhine
 
-import "crypto"
+import (
+	"crypto"
+)
 
 type ZoneOwner struct {
 	Name   string
@@ -15,3 +17,19 @@ const (
 	EOI AuthorityLevel = 2
 	DOL AuthorityLevel = 3
 )
+
+func (al AuthorityLevel) ToString() string {
+	switch al {
+	case IND:
+		return "IND"
+	case TER:
+		return "TER"
+	case EOI:
+		return "EOI"
+	case DOL:
+		return "DOL"
+	default:
+		return "NONE"
+	}
+
+}
