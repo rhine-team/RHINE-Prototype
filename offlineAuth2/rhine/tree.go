@@ -5,6 +5,18 @@ import (
 	"github.com/cbergoon/merkletree"
 )
 
+type MPathProofType int
+
+const (
+	ProofOfPresence MPathProofType = 0
+	ProofOfAbsence  MPathProofType = 1
+)
+
+type MPathProof struct {
+	path  [][]byte
+	ptype MPathProofType
+}
+
 type DSLeafZone struct {
 	zone string
 	alv  AuthorityLevel

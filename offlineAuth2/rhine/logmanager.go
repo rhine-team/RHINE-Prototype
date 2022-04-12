@@ -6,19 +6,47 @@ import (
 )
 
 type LogManager struct {
-	log      Log
-	privkey  any
-	dsa      DSA
-	subzones []DSLeafContent
+	log     Log
+	privkey any
+	logs    map[string]DSA
+	T       uint64
 }
 
-// create dpss from DSA
+func (lm LogManager) DSProofRet(PZone string, CZone string, ptype MPathProofType) Dsp {
+	log := lm.logs[PZone]
 
-func (lm LogManager) GetInclusionProof(label string) (merklepath [][]byte, index []int64, err error) {
+	dsp := Dsp{
+		dsum:   log.GetDSum(),
+		epochT: lm.T,
+		sig:    RhineSig{},
+		proof:  MPathProof{},
+	}
 
-	for _, leaf := range lm.subzones {
+	dsp.Sign(lm.privkey)
+
+	var path [][]byte
+	switch ptype {
+	case ProofOfPresence:
+		path, _, _ = lm.GetInclusionProof(PZone, CZone)
+	case ProofOfAbsence:
+		path, _, _ = lm.GetAbsenceProof(PZone, CZone)
+	}
+
+	dsp.proof = MPathProof{
+		path:  path,
+		ptype: ptype,
+	}
+
+	return dsp
+}
+
+func (lm LogManager) GetInclusionProof(zone string, label string) (merklepath [][]byte, index []int64, err error) {
+
+	log := lm.logs[zone]
+
+	for _, leaf := range log.subzones {
 		if leaf.start.zone == label || leaf.end.zone == label {
-			merklepath, index, err = lm.dsa.acc.GetMerklePath(leaf)
+			merklepath, index, err = log.acc.GetMerklePath(leaf)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -27,11 +55,13 @@ func (lm LogManager) GetInclusionProof(label string) (merklepath [][]byte, index
 	return nil, nil, errors.New("label not found")
 }
 
-func (lm LogManager) GetAbsenceProof(label string) (merklepath [][]byte, index []int64, err error) {
+func (lm LogManager) GetAbsenceProof(zone string, label string) (merklepath [][]byte, index []int64, err error) {
 
-	for _, leaf := range lm.subzones {
+	log := lm.logs[zone]
+
+	for _, leaf := range log.subzones {
 		if strings.Compare(leaf.start.zone, label) == -1 && strings.Compare(leaf.end.zone, label) == 1 {
-			merklepath, index, err = lm.dsa.acc.GetMerklePath(leaf)
+			merklepath, index, err = log.acc.GetMerklePath(leaf)
 			if err != nil {
 				return nil, nil, err
 			}

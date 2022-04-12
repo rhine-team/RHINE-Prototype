@@ -5,12 +5,14 @@ import (
 	"time"
 )
 
+// Delegation Status Accumulator
 type DSA struct {
-	zone string
-	alv  AuthorityLevel
-	exp  time.Time
-	cert []byte
-	acc  merkletree.MerkleTree
+	zone     string
+	alv      AuthorityLevel
+	exp      time.Time
+	cert     []byte
+	acc      merkletree.MerkleTree
+	subzones []DSLeafContent
 }
 
 type DAcc struct {
@@ -21,7 +23,7 @@ type DAcc struct {
 type DSum struct {
 	dacc DAcc
 	alv  AuthorityLevel
-	cert []byte
+	cert []byte // hash of TBSRc_zone
 	exp  time.Time
 }
 
