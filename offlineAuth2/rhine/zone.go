@@ -2,23 +2,25 @@ package rhine
 
 import (
 	"crypto"
+	"fmt"
 )
 
 type ZoneOwner struct {
 	Name   string
-	Pubkey crypto.Signer
+	Pubkey crypto.PublicKey
 }
 
-type AuthorityLevel int
+type AuthorityLevelFlag uint8
+type AuthorityLevel uint8
 
 const (
-	IND AuthorityLevel = 0
-	TER AuthorityLevel = 1
-	EOI AuthorityLevel = 2
-	DOL AuthorityLevel = 3
+	IND AuthorityLevelFlag = 0b0001
+	EOI AuthorityLevelFlag = 0b0010
+	TER AuthorityLevelFlag = 0b0100
+	DOL AuthorityLevelFlag = 0b1000
 )
 
-func (al AuthorityLevel) ToString() string {
+func (al AuthorityLevelFlag) ToString() string {
 	switch al {
 	case IND:
 		return "IND"
@@ -32,4 +34,53 @@ func (al AuthorityLevel) ToString() string {
 		return "NONE"
 	}
 
+}
+
+func (al AuthorityLevel) ToString() string {
+	return fmt.Sprintf("%b", al)
+}
+
+func (al AuthorityLevel) CheckINDSet() bool {
+	return 0b1&al == 1
+}
+
+func (al AuthorityLevel) CheckEOISet() bool {
+	return 0b1&(al>>1) == 1
+}
+
+func (al AuthorityLevel) CheckTERSet() bool {
+	return 0b1&(al>>2) == 1
+}
+
+func (al AuthorityLevel) CheckDOLSet() bool {
+	return 0b1&(al>>3) == 1
+}
+
+func (al AuthorityLevel) CheckLegalAuthLevel() bool {
+	return al == 0b0000 || al == 0b0011 || al == 0b0011 || al == 0b0101 || al == 0b1001 || al == 0b0001
+}
+
+// Check legal delegation
+func CheckLegalDelegationAuthority(parentAL AuthorityLevel, childAL AuthorityLevel) bool {
+	res := parentAL.CheckLegalAuthLevel() && childAL.CheckLegalAuthLevel()
+	if !res {
+		return false
+	}
+
+	if parentAL.CheckEOISet() {
+		// Child CANNOT be independent!
+		return !childAL.CheckINDSet()
+	} else if parentAL.CheckTERSet() {
+		// parent is terminating, meaning no delegation is legit
+		return false
+	} else if parentAL.CheckDOLSet() {
+		// parent is delegation only, TODO: check if legal
+		return false
+	} else if parentAL.CheckINDSet() {
+		// parent is IND without further restrictions
+		return true
+	} else {
+		// parent is NON-IND, should not be able to delegate
+		return false
+	}
 }

@@ -1,8 +1,10 @@
 package rhine
 
-import "crypto"
+import (
+	"crypto"
+)
 
-type Authority struct {
+type Agg struct {
 	Name   string
 	Pubkey crypto.PublicKey
 }

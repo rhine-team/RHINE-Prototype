@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package ca;
+
+option go_package = "github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/ca";
+
+// Service offered by the ca
+service CAService {
+  rpc SubmitNewDelegCA (SubmitNewDelegCARequest) returns (SubmitNewDelegCAResponse) {}
+}
+
+message RhineSig {
+  bytes Data = 1;
+  bytes Sig = 2;
+  int32 Supportedalgo = 3;
+  string DataPostfix = 4;
+}
+
+
+message SubmitNewDelegCARequest {
+  RhineSig Acsr = 1;
+  bytes Rcertp = 2;
+}
+
+
+message SubmitNewDelegCAResponse {
+  bytes Rcertc = 1;
+  repeated RhineSig Lcfms = 2;
+}

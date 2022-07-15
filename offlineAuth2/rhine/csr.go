@@ -2,32 +2,36 @@ package rhine
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
+	"time"
+
 	"github.com/google/certificate-transparency-go/asn1"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509/pkix"
-	"time"
 )
 
 // csr object holds additional rhine-related info, which will be added as extension to actual x509 csr
 type Csr struct {
-	zone      ZoneOwner
-	ca        Authority
-	log       Log
-	al        AuthorityLevel
-	exp       time.Time
-	csr       x509.CertificateRequest
-	signedcsr []byte
+	zone       ZoneOwner
+	ca         Authority
+	log        []Log
+	al         AuthorityLevel
+	exp        time.Time
+	csr        x509.CertificateRequest
+	revocation int
+	rid        []byte
+	signedcsr  []byte
 }
 
-func (csr Csr) Sign(priv any) error {
+func (csr *Csr) Sign(priv any) error {
 	ext, err := csr.CreateCSRExtension()
 	if err != nil {
 		return err
 	}
 
 	csr.csr = x509.CertificateRequest{
-		PublicKey: csr.zone.Pubkey.Public(),
+		PublicKey: csr.zone.Pubkey,
 		Subject: pkix.Name{
 			CommonName: "RHINE_ZONE_OWNER:" + csr.zone.Name,
 		},
@@ -49,16 +53,20 @@ var (
 )
 
 type CsrExt struct {
-	zone ZoneOwner
-	al   AuthorityLevel
-	exp  time.Time
+	zone       ZoneOwner
+	al         AuthorityLevel
+	exp        time.Time
+	revocation int
+	rid        []byte
 }
 
-func (csr Csr) CreateCSRExtension() (pkix.Extension, error) {
+func (csr *Csr) CreateCSRExtension() (pkix.Extension, error) {
 	data, err := asn1.Marshal(CsrExt{
-		zone: csr.zone,
-		al:   csr.al,
-		exp:  csr.exp,
+		zone:       csr.zone,
+		al:         csr.al,
+		exp:        csr.exp,
+		revocation: csr.revocation,
+		rid:        csr.rid,
 	})
 	if err != nil {
 		return pkix.Extension{}, err
@@ -124,4 +132,53 @@ func VerifyCSR(csr []byte) (*Csr, error) {
 		signedcsr: csr,
 	}, nil
 
+}
+
+func (csr *Csr) ReturnRawBytes() []byte {
+	return csr.csr.Raw
+}
+
+func (csr *Csr) ReturnRid() []byte {
+	return csr.rid
+}
+
+// Creates a rid given a csr
+func (csr *Csr) createRID() ([]byte, error) {
+	hasher := sha256.New()
+
+	// t0 TODO
+
+	// ZN
+	hasher.Write([]byte(csr.zone.Name))
+
+	// pk
+	if keyBytes, _, err := EncodePublicKey(csr.zone.Pubkey); err != nil {
+		return nil, err
+	} else {
+		hasher.Write(keyBytes)
+	}
+
+	// al
+	hasher.Write([]byte{byte(csr.al)})
+
+	// expiration time
+	if timeBinary, err := csr.exp.MarshalBinary(); err != nil {
+		return nil, err
+	} else {
+		hasher.Write(timeBinary)
+	}
+
+	// revocation bit
+	hasher.Write([]byte{byte(csr.revocation)})
+
+	// A
+	hasher.Write([]byte(csr.ca.Name))
+
+	// L
+	for _, log := range csr.log {
+		hasher.Write([]byte(log.Name))
+	}
+
+	csr.rid = hasher.Sum(nil)
+	return csr.rid, nil
 }
