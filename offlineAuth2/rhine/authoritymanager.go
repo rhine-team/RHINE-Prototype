@@ -1,5 +1,7 @@
 package rhine
 
+/*
+
 import (
 	"crypto/rand"
 	"encoding/asn1"
@@ -8,6 +10,8 @@ import (
 	"math/big"
 	"time"
 )
+
+
 
 type AuthorityManager struct {
 	ca      Authority
@@ -43,3 +47,5 @@ func (am AuthorityManager) CreatePoisonedCert(psr *Psr) *x509.Certificate {
 	return cert
 
 }
+
+*/

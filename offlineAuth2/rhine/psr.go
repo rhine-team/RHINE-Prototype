@@ -2,13 +2,14 @@ package rhine
 
 import (
 	"errors"
+
 	"github.com/google/certificate-transparency-go/x509"
 )
 
 type Psr struct {
 	csr        *Csr
 	psignedcsr RhineSig
-	pcert      x509.Certificate
+	pcert      *x509.Certificate
 	dsp        *Dsp
 }
 
@@ -37,4 +38,12 @@ func (psr Psr) Verify() error {
 	}
 
 	return nil
+}
+
+func (psr Psr) GetZones() (string, string) {
+	return GetParentZone(psr.csr.zone.Name), psr.csr.zone.Name
+}
+
+func (psr Psr) GetRhineSig() RhineSig {
+	return psr.psignedcsr
 }

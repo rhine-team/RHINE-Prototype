@@ -10,39 +10,55 @@ import (
 // proof is merkle path as PoA or PoP
 
 type Dsp struct {
-	dsum   DSum
-	epochT uint64
-	sig    RhineSig
-	proof  MPathProof
+	Dsum   DSum
+	EpochT uint64
+	Sig    RhineSig
+	Proof  MPathProof
 }
 
 type toSignDsp struct {
-	dsum   DSum
-	epochT uint64
+	Dsum   DSum
+	EpochT uint64
 }
 
-func (dsp Dsp) Sign(priv interface{}) error {
+func (dsp *Dsp) Sign(priv interface{}) error {
 
 	var message bytes.Buffer
 	enc := gob.NewEncoder(&message)
 
 	err := enc.Encode(toSignDsp{
-		dsum:   dsp.dsum,
-		epochT: dsp.epochT,
+		Dsum:   dsp.Dsum,
+		EpochT: dsp.EpochT,
 	})
 
 	if err != nil {
 		return err
 	}
 
-	dsp.sig = RhineSig{
+	dsp.Sig = RhineSig{
 		Data: message.Bytes(),
 	}
 
-	err = dsp.sig.Sign(priv)
+	err = dsp.Sig.Sign(priv)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (dsp *Dsp) Verify(pub interface{}, zname string) bool {
+
+	veri := dsp.Sig.Verify(pub)
+	if !veri {
+		return false
+	}
+
+	veriProof, err := (&dsp.Proof).VerifyMPathProof(dsp.Dsum.Dacc.Roothash, zname)
+	if !veriProof || err != nil {
+		return false
+	}
+
+	// TODO more checks
+	return true
 }

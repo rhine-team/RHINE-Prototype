@@ -1,8 +1,10 @@
 package rhine
 
 import (
-	"github.com/cbergoon/merkletree"
+	//"sort"
 	"time"
+
+	"github.com/cbergoon/merkletree"
 )
 
 // Delegation Status Accumulator
@@ -11,34 +13,59 @@ type DSA struct {
 	alv      AuthorityLevel
 	exp      time.Time
 	cert     []byte
-	acc      merkletree.MerkleTree
+	acc      *merkletree.MerkleTree
 	subzones []DSLeafContent
 }
 
 type DAcc struct {
-	zone     string
-	roothash []byte
+	Zone     string
+	Roothash []byte
 }
 
 type DSum struct {
-	dacc DAcc
-	alv  AuthorityLevel
-	cert []byte // hash of TBSRc_zone
-	exp  time.Time
+	Dacc DAcc
+	Alv  AuthorityLevel
+	Cert []byte // hash of TBSRc_zone
+	Exp  time.Time
 }
 
-func (dsa DSA) GetDAcc() DAcc {
+func (dsa *DSA) GetDAcc() DAcc {
 	return DAcc{
-		zone:     dsa.zone,
-		roothash: dsa.acc.Root.Hash,
+		Zone:     dsa.zone,
+		Roothash: dsa.acc.Root.Hash,
 	}
 }
 
-func (dsa DSA) GetDSum() DSum {
+func (dsa *DSA) GetDSum() DSum {
 	return DSum{
-		dacc: dsa.GetDAcc(),
-		alv:  dsa.alv,
-		cert: dsa.cert,
-		exp:  dsa.exp,
+		Dacc: dsa.GetDAcc(),
+		Alv:  dsa.alv,
+		Cert: dsa.cert,
+		Exp:  dsa.exp,
 	}
 }
+
+/*
+func (dsa *DSA) BuildDSLeafOrdered(sliceLeafs []DSLeafZone) {
+	// We sort the leafs first
+	sort.Slice(sliceLeafs, func(a, b int) bool {
+		return sliceLeafs.zone[a] < sliceLeafs.zone[b]
+	})
+
+	// Generate the double zone leaf structure
+	res := []DSLeafContent{}
+	for i, v := range sliceLeafs {
+		var succ DSLeafZone
+
+		if i == 0 {
+			succ =
+		} else if i == len(sliceLeafs)-1 {
+
+		} else {
+
+		}
+		leafContent := DSLeafContent{}
+		res = append(res, )
+	}
+}
+*/
