@@ -43,11 +43,11 @@ type CaConfig struct {
 	ServerAddress       string
 	RootCertsPath       string
 
-	LogsAddress     []string
+	LogsName        []string
 	LogsPubKeyPaths []string
 
-	AggregatorAddress []string
-	AggPubKeyPaths    []string
+	AggregatorName []string
+	AggPubKeyPaths []string
 }
 
 type CAError struct {
@@ -81,13 +81,7 @@ func NewCA(config CaConfig) *Ca {
 	var cert *x509.Certificate
 
 	if config.PrivateKeyPath == "" {
-		switch config.PrivateKeyAlgorithm {
-		case "RSA":
-			privKey, _ = rsa.GenerateKey(rand.Reader, 2048)
-			pubkey = privKey.(*rsa.PrivateKey).Public()
-		case "Ed25519":
-			pubkey, privKey, _ = ed25519.GenerateKey(rand.Reader)
-		}
+		log.Fatalln("CA PrivateKey path not found!")
 	} else {
 		switch config.PrivateKeyAlgorithm {
 		case "RSA":
@@ -134,12 +128,14 @@ func NewCA(config CaConfig) *Ca {
 	}
 
 	files, err := ioutil.ReadDir(config.RootCertsPath)
+	//log.Println("Files for trust root: ", files)
 	if err != nil {
 		log.Fatal("Error reading roots directory: ", err)
 	}
 
 	for _, file := range files {
 		pemfile, _ := ioutil.ReadFile(config.RootCertsPath + file.Name())
+
 		if myca.CertPool.AppendCertsFromPEM(pemfile) {
 			log.Println("Added " + file.Name() + " to trust root")
 		}
@@ -147,11 +143,11 @@ func NewCA(config CaConfig) *Ca {
 
 	myca.LogMap = make(map[string]Log)
 	myca.AggMap = make(map[string]Agg)
-	myca.LogList = config.LogsAddress
-	myca.AggList = config.AggregatorAddress
+	myca.LogList = config.LogsName
+	myca.AggList = config.AggregatorName
 
 	// Log map for pubkey
-	for i, v := range config.LogsAddress {
+	for i, v := range config.LogsName {
 		pk, _ := PublicKeyFromFile(config.LogsPubKeyPaths[i])
 		myca.LogMap[v] = Log{
 			Name:   v,
@@ -160,7 +156,7 @@ func NewCA(config CaConfig) *Ca {
 	}
 
 	// Aggr map for pubkey
-	for i, v := range config.AggregatorAddress {
+	for i, v := range config.AggregatorName {
 		pk, _ := PublicKeyFromFile(config.AggPubKeyPaths[i])
 		myca.AggMap[v] = Agg{
 			Name:   v,
@@ -178,9 +174,13 @@ func (myca *Ca) VerifyNewDelegationRequest(rcertp *x509.Certificate, acsr *Rhine
 		pcert:      rcertp,
 	}
 
-	if err := psr.Verify(); err != nil {
+	// Check that ACSR was signed by Parent and
+	// Check that the csr is signed by the Child
+	// And check that child and parent are what they say
+	if err := psr.Verify(myca.CertPool); err != nil {
 		return false, err, nil
 	}
+
 	return true, nil, &psr
 }
 
@@ -210,29 +210,33 @@ func (myca *Ca) CreatePoisonedCert(psr *Psr) *x509.Certificate {
 
 	cert, _ := x509.ParseCertificate(certbytes)
 
+	//log.Printf("The following PreCert (poisoned) was issued: %+v ", cert)
+
 	return cert
 
 }
 
-func (myca *Ca) CreateNDS(psr *Psr, tbscertb []byte) (*Nds, error) {
-	logl := make([]Log, 0, len(myca.LogMap))
-	for _, v := range myca.LogMap {
-		logl = append(logl, v)
-	}
+func (myca *Ca) CreateNDS(psr *Psr, certC *x509.Certificate) (*Nds, error) {
+
+	// Extract list of designated loggers
+	logl := psr.csr.logs
+
+	/*
+		aggl := make([]Agg, 0, len(myca.AggMap))
+		for _, v := range myca.AggMap {
+			aggl = append(aggl, v)
+		}
+	*/
 
 	// TODO Randomly select aggregs instead of all
-	aggl := make([]Agg, 0, len(myca.AggMap))
-	for _, v := range myca.AggMap {
-		aggl = append(aggl, v)
-	}
+	aggl := myca.AggList
 
-	// TODO Hash tbscert
 	ndssign := NdsToSign{
 		Log:     logl,
 		Agg:     aggl,
 		Zone:    psr.csr.zone,
 		Al:      psr.csr.al,
-		TbsCert: tbscertb,
+		TbsCert: ExtractTbsRCAndHash(certC),
 		Exp:     psr.csr.exp,
 	}
 
@@ -246,6 +250,28 @@ func (myca *Ca) CreateNDS(psr *Psr, tbscertb []byte) (*Nds, error) {
 	}
 
 	return nds, nil
+}
+
+func (myca *Ca) IssueRHINECert(precert *x509.Certificate, psr *Psr) *x509.Certificate {
+	certTemplate := x509.Certificate{
+		// TODO real serial number
+		SerialNumber: precert.SerialNumber,
+		Issuer:       precert.Issuer,
+		Subject:      precert.Subject,
+		NotBefore:    precert.NotBefore,
+		NotAfter:     precert.NotAfter,
+		KeyUsage:     precert.KeyUsage,
+		DNSNames:     precert.DNSNames,
+	}
+	rhinext, _ := psr.csr.CreateCSRExtension()
+
+	certTemplate.ExtraExtensions = append(certTemplate.ExtraExtensions, rhinext)
+
+	certbytes, _ := x509.CreateCertificate(rand.Reader, &certTemplate, myca.CACertificate, psr.csr.csr.PublicKey, myca.PrivateKey)
+
+	cert, _ := x509.ParseCertificate(certbytes)
+
+	return cert
 }
 
 /*

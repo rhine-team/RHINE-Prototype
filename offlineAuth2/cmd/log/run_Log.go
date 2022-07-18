@@ -40,8 +40,9 @@ var rootCmd = &cobra.Command{
 		}
 
 		s := grpc.NewServer()
-		pf.RegisterCAServiceServer(s, &ls.LogServer{LogManager: logm})
+		pf.RegisterLogServiceServer(s, &ls.LogServer{LogManager: logm})
 
+		log.Println("Rhine Log server online at: ", cof.ServerAddress)
 		if err := s.Serve(lis); err != nil {
 			log.Fatalf("Serving failed: %v", err)
 		}

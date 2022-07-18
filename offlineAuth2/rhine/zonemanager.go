@@ -1,14 +1,15 @@
 package rhine
 
 import (
-	"errors"
-	//"log"
 	"crypto/ed25519"
-	"crypto/rand"
+	"errors"
+
+	//"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
 	"io/ioutil"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -19,7 +20,16 @@ import (
 type ZoneManager struct {
 	zone    ZoneOwner
 	privkey any
-	rcert   *x509.Certificate
+	Rcert   *x509.Certificate
+
+	LogMap  map[string]Log
+	AggMap  map[string]Agg
+	LogList []string
+	AggList []string
+
+	Ca Authority
+
+	ChildrenKeyDirectoryPath string
 }
 
 type ZoneConfig struct {
@@ -29,6 +39,18 @@ type ZoneConfig struct {
 	ServerAddress       string
 	ZoneName            string
 	ParentServerAddr    string
+
+	LogsName        []string
+	LogsPubKeyPaths []string
+
+	AggregatorName []string
+	AggPubKeyPaths []string
+
+	CAName       string
+	CAServerAddr string
+	CAPubKeyPath string
+
+	ChildrenKeyDirectoryPath string
 }
 
 func LoadZoneConfig(Path string) (ZoneConfig, error) {
@@ -53,13 +75,7 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 	var cert *x509.Certificate
 
 	if config.PrivateKeyPath == "" {
-		switch config.PrivateKeyAlgorithm {
-		case "RSA":
-			privKey, _ = rsa.GenerateKey(rand.Reader, 2048)
-			pubkey = privKey.(*rsa.PrivateKey).Public()
-		case "Ed25519":
-			pubkey, privKey, _ = ed25519.GenerateKey(rand.Reader)
-		}
+		log.Fatalf("ZoneManager: No PrivateKey Path was set")
 	} else {
 		switch config.PrivateKeyAlgorithm {
 		case "RSA":
@@ -90,24 +106,55 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 		}
 	}
 
+	caPk, _ := PublicKeyFromFile(config.CAPubKeyPath)
+
 	myzone := ZoneManager{
 		privkey: privKey,
 		zone: ZoneOwner{
 			Name:   config.ZoneName,
 			Pubkey: pubkey,
 		},
-		rcert: cert,
+		Rcert: cert,
+		Ca: Authority{
+			Name:   config.CAName,
+			Pubkey: caPk,
+		},
+		ChildrenKeyDirectoryPath: config.ChildrenKeyDirectoryPath,
+	}
+
+	// Load Aggregator and Log info
+	myzone.LogMap = make(map[string]Log)
+	myzone.AggMap = make(map[string]Agg)
+	myzone.LogList = config.LogsName
+	myzone.AggList = config.AggregatorName
+
+	// Log map for pubkey
+	for i, v := range config.LogsName {
+		pk, _ := PublicKeyFromFile(config.LogsPubKeyPaths[i])
+		myzone.LogMap[v] = Log{
+			Name:   v,
+			Pubkey: pk,
+		}
+	}
+
+	// Aggr map for pubkey
+	for i, v := range config.AggregatorName {
+		pk, _ := PublicKeyFromFile(config.AggPubKeyPaths[i])
+		myzone.AggMap[v] = Agg{
+			Name:   v,
+			Pubkey: pk,
+		}
 	}
 
 	return &myzone
 
 }
 
-func (zm *ZoneManager) CreateSignedCSR(authlevel AuthorityLevel, exp time.Time, ca Authority, log []Log, revo int) (*Csr, error) {
-	csr := Csr{
+func (zm *ZoneManager) CreateSignedCSR(authlevel AuthorityLevel, exp time.Time, ca Authority, logs []string, revo int) (*Csr, error) {
+	csr := &Csr{
 		zone:       zm.zone,
 		ca:         ca,
-		log:        log,
+		logs:       logs,
 		al:         authlevel,
 		exp:        exp,
 		revocation: revo,
@@ -122,7 +169,8 @@ func (zm *ZoneManager) CreateSignedCSR(authlevel AuthorityLevel, exp time.Time, 
 		return nil, err
 	}
 
-	return &csr, nil
+	//log.Printf("At the end of Signed CSR creation %+v", csr)
+	return csr, nil
 
 }
 
@@ -138,9 +186,24 @@ func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
 		return nil, errors.New("csr zone " + csr.zone.Name + " is not a child zone of " + zm.zone.Name)
 	}
 
-	//TODO check if delegation legal??
+	// Check if child key and saved key match (NOTE: / needs to be last char of the Path)
+	// TODO: Sanitize the name!!!
+	pathChildPkey := zm.ChildrenKeyDirectoryPath + csr.zone.Name + "_pub.pem"
+	if _, err := os.Stat(pathChildPkey); err != nil {
+		return nil, errors.New("Not a child zone of this parent!")
+	}
 
-	// Generate apv
+	pKey, errKey := PublicKeyFromFile(pathChildPkey)
+	if errKey != nil {
+		return nil, errKey
+	}
+	if !EqualKeys(pKey, csr.Pkey) {
+		return nil, errors.New("Public key on parent server did not match CSR public key")
+	}
+
+	//log.Printf("CSR when verifying child csr %+v", csr)
+
+	//TODO check if delegation legal??
 
 	return csr, nil
 }
@@ -162,7 +225,7 @@ func (zm *ZoneManager) CreatePSR(csr *Csr) *Psr {
 	psr := Psr{
 		csr:        csr,
 		psignedcsr: RhineSig{},
-		pcert:      zm.rcert,
+		pcert:      zm.Rcert,
 		dsp:        nil,
 	}
 

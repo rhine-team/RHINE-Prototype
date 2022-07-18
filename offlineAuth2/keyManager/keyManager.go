@@ -5,6 +5,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/rsa"
+
+	//"log"
 	"strings"
 
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/rhine"
@@ -14,14 +16,14 @@ import (
 
 func CreateRSAKey(path string, pubkey bool) error {
 	PrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	pbkey = privKey.(*rsa.PrivateKey).Public()
+	pbkey := PrivateKey.Public().(*rsa.PublicKey)
 
 	if err != nil {
 		return err
 	}
 
 	if pubkey {
-		pa := strings.Split(path, ".")[0]
+		pa := strings.ReplaceAll(path, ".pem", "")
 		err = rhine.StoreRSAPublicKeyPEM(pbkey, pa+"_pub.pem")
 
 		if err != nil {
@@ -44,7 +46,8 @@ func CreateEd25519Key(path string, pubkey bool) error {
 	}
 
 	if pubkey {
-		pa := strings.Split(path, ".")[0]
+		pa := strings.ReplaceAll(path, ".pem", "")
+
 		err = rhine.StorePublicKeyEd25519(pa+"_pub.pem", pbkey)
 
 		if err != nil {
@@ -53,6 +56,36 @@ func CreateEd25519Key(path string, pubkey bool) error {
 	}
 
 	err = rhine.StorePrivateKeyEd25519(path, privatekey)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DerivePubKeyRSA(privPath string, path string) error {
+	// Read in private key
+	PrivateKey, err := rhine.LoadRSAPrivateKeyPEM(privPath)
+	if err != nil {
+		return err
+	}
+
+	pbkey := PrivateKey.Public().(*rsa.PublicKey)
+	err = rhine.StoreRSAPublicKeyPEM(pbkey, path)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func DerivePubKeyEd25519(privPath string, path string) error {
+	// Read in private key
+	PrivateKey, err := rhine.LoadPrivateKeyEd25519(privPath)
+	if err != nil {
+		return err
+	}
+
+	pbkey := PrivateKey.Public().(ed25519.PublicKey)
+	err = rhine.StorePublicKeyEd25519(path, pbkey)
 	if err != nil {
 		return err
 	}
@@ -76,6 +109,44 @@ func CreateSelfSignedCACertificate(alg string, keyPath string, certPath string) 
 		}
 	}
 	certbytes, err := rhine.CreateSelfSignedCertCA(privKey.Public(), privKey)
+	if err != nil {
+		return err
+	}
+	err = rhine.StoreCertificatePEM(certPath, certbytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func CreateCertificateSignedByCA(alg string, keyPath string, caKeyPath string, pathCACert string, certPath string, name string) error {
+	var privKey crypto.Signer
+	var errCA error
+	var privKeyCA crypto.Signer
+	switch alg {
+	case "RSA":
+		var err error
+		privKey, err = rhine.LoadRSAPrivateKeyPEM(keyPath)
+		privKeyCA, errCA = rhine.LoadRSAPrivateKeyPEM(caKeyPath)
+		if err != nil {
+			return err
+		}
+		if errCA != nil {
+			return errCA
+		}
+	case "Ed25519":
+		var err error
+		privKey, err = rhine.LoadPrivateKeyEd25519(keyPath)
+		privKeyCA, errCA = rhine.LoadPrivateKeyEd25519(caKeyPath)
+		if err != nil {
+			return err
+		}
+		if errCA != nil {
+			return errCA
+		}
+	}
+	certbytes, err := rhine.CreateCertificateUsingCA(privKey.Public(), privKey, privKeyCA, pathCACert, name)
 	if err != nil {
 		return err
 	}

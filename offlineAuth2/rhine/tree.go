@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"errors"
+	"log"
 
 	"github.com/cbergoon/merkletree"
 )
@@ -169,6 +170,7 @@ func (d *DSA) GetMPathProofAbsence(zname string) (*MPathProof, bool, error) {
 	for _, sz := range d.subzones {
 		if sz.Start.Zone == z.Zone { //&& sz.start.alv == z.alv
 			// Element is actually present, we return false and no proof
+			log.Println("Element is actually present:", sz.Start.Zone, " AND ", z.Zone)
 			return nil, false, nil
 		}
 

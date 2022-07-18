@@ -58,12 +58,24 @@ func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType) D
 	}
 
 	var path *MPathProof
+	var presBool bool
+	var err error
 	switch ptype {
 	case ProofOfPresence:
-		path, _, _ = log.GetMPathProofPresence(CZone)
+		path, presBool, err = log.GetMPathProofPresence(CZone)
 	case ProofOfAbsence:
-		path, _, _ = log.GetMPathProofAbsence(CZone)
+		path, presBool, err = log.GetMPathProofAbsence(CZone)
 	}
+
+	if err != nil {
+		logger.Println("Error while getting proof", err)
+	}
+
+	if !presBool {
+		logger.Println("Claim of absence/presence wrong!")
+	}
+
+	logger.Printf("Print our Proof %+v", path)
 
 	dsp.Proof = *path
 

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/google/certificate-transparency-go/asn1"
@@ -15,13 +16,15 @@ import (
 type Csr struct {
 	zone       ZoneOwner
 	ca         Authority
-	log        []Log
+	logs       []string
 	al         AuthorityLevel
 	exp        time.Time
 	csr        x509.CertificateRequest
 	revocation int
 	rid        []byte
 	signedcsr  []byte
+
+	Pkey any
 }
 
 func (csr *Csr) Sign(priv any) error {
@@ -35,14 +38,17 @@ func (csr *Csr) Sign(priv any) error {
 		Subject: pkix.Name{
 			CommonName: "RHINE_ZONE_OWNER:" + csr.zone.Name,
 		},
-		Extensions: []pkix.Extension{ext},
-		DNSNames:   []string{csr.zone.Name},
+		Extensions:      []pkix.Extension{ext},
+		ExtraExtensions: []pkix.Extension{ext},
+		DNSNames:        []string{csr.zone.Name},
 	}
 
 	csr.signedcsr, err = x509.CreateCertificateRequest(rand.Reader, &csr.csr, priv)
 	if err != nil {
 		return err
 	}
+
+	//log.Printf("Csr. object at end of signing: %+v", csr)
 
 	return nil
 
@@ -53,22 +59,32 @@ var (
 )
 
 type CsrExt struct {
-	zone       ZoneOwner
-	al         AuthorityLevel
-	exp        time.Time
-	revocation int
-	rid        []byte
+	Zone       ZoneOwner
+	Al         int
+	Exp        time.Time
+	Revocation int
+	CAuthority Authority
+	Logs       []string
+	Rid        []byte
 }
 
 func (csr *Csr) CreateCSRExtension() (pkix.Extension, error) {
+	//log.Printf("Csr: %+v\n", *csr)
+	if csr.ca.Pubkey == nil {
+		// TODO fix this workaround
+		csr.ca.Pubkey = []byte(nil)
+	}
 	data, err := asn1.Marshal(CsrExt{
-		zone:       csr.zone,
-		al:         csr.al,
-		exp:        csr.exp,
-		revocation: csr.revocation,
-		rid:        csr.rid,
+		Zone:       csr.zone,
+		Al:         int(csr.al), //TODO: Look at consq.
+		Exp:        csr.exp,
+		Revocation: csr.revocation,
+		CAuthority: csr.ca,
+		Logs:       csr.logs,
+		Rid:        csr.rid,
 	})
 	if err != nil {
+		log.Println("Marshaling of extension failed!")
 		return pkix.Extension{}, err
 	}
 	ext := pkix.Extension{
@@ -115,27 +131,34 @@ func VerifyCSR(csr []byte) (*Csr, error) {
 	}
 
 	if err := csrRequest.CheckSignature(); err != nil {
+		log.Println("Signature check failed on CSR")
 		return nil, err
 	}
 
 	var csrExt CsrExt
 	csrExt, err = FindCSRExt(csrRequest.Extensions)
 	if err != nil {
+		log.Printf("Failed at finding Ext: %+v", csrRequest)
 		return nil, err
 	}
 
 	return &Csr{
-		zone:      csrExt.zone,
-		al:        csrExt.al,
-		exp:       csrExt.exp,
-		csr:       *csrRequest,
-		signedcsr: csr,
+		zone:       csrExt.Zone,
+		al:         AuthorityLevel(csrExt.Al),
+		exp:        csrExt.Exp,
+		revocation: csrExt.Revocation,
+		ca:         csrExt.CAuthority,
+		logs:       csrExt.Logs,
+		rid:        csrExt.Rid,
+		csr:        *csrRequest,
+		signedcsr:  csr,
+		Pkey:       csrRequest.PublicKey,
 	}, nil
 
 }
 
 func (csr *Csr) ReturnRawBytes() []byte {
-	return csr.csr.Raw
+	return csr.signedcsr
 }
 
 func (csr *Csr) ReturnRid() []byte {
@@ -146,7 +169,12 @@ func (csr *Csr) ReturnRid() []byte {
 func (csr *Csr) createRID() ([]byte, error) {
 	hasher := sha256.New()
 
-	// t0 TODO
+	// t0
+	if timeBinary, err := time.Now().MarshalBinary(); err != nil {
+		return nil, err
+	} else {
+		hasher.Write(timeBinary)
+	}
 
 	// ZN
 	hasher.Write([]byte(csr.zone.Name))
@@ -175,8 +203,8 @@ func (csr *Csr) createRID() ([]byte, error) {
 	hasher.Write([]byte(csr.ca.Name))
 
 	// L
-	for _, log := range csr.log {
-		hasher.Write([]byte(log.Name))
+	for _, lo := range csr.logs {
+		hasher.Write([]byte(lo))
 	}
 
 	csr.rid = hasher.Sum(nil)

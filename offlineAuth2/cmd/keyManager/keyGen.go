@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	fmt.Println("INSTRUCTIONS: ./keyGen [KeyType] [OutputPath] [PubKey]\tKeyType = RSA or Ed25519\tOutputPath = e.g keys/private.pem\PubKey=--pubkey (optional)")
+	fmt.Println("INSTRUCTIONS: ./keyGen [KeyType] [OutputPath] [PubKey]\tKeyType = RSA or Ed25519\tOutputPath = e.g keys/private.pem\tPubKey=--pubkey (optional)")
 
 	if len(os.Args) < 3 {
 		log.Fatal("Not enough arguments")

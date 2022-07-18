@@ -4,22 +4,33 @@ import (
 	"context"
 	//"encoding/hex"
 	"log"
+	"net"
 
+	//cx509 "crypto/x509"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
-	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/cbor"
+	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth2/cbor"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/ca"
 	ps "github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/parentserver"
-	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/parentserver/server/pserver"
+	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/parentserver/pserver"
 
+	//"github.com/grantae/certinfo"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth2/rhine"
 	"github.com/spf13/cobra"
 
 	//"github.com/spf13/viper"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
+
+var ParentConfig string
+
+var ChildConfig string
+var ZoneName string
+var ParentServer string
+var OutputPath string
+var ZoneIsIndependent bool
+var ZoneIsDelegationOnly bool
 
 var rootCmd = &cobra.Command{
 	Use:   "run_zoneManager",
@@ -35,34 +46,49 @@ var RequestDelegCmd = &cobra.Command{
 	Args:    nil,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Input
-		newZoneName := "example.ethz.ch"
-		parentServer := "localhost:10004"
-		reqAuthorityLevel := 0b0001
 		expirationTime := time.Now().Add(time.Hour * 24 * 180)
+		revocationBit := 0
 
 		// Parse config
-		configPath := "configs/childExample.json"
-		cof, errparse := rhine.LoadZoneConfig(configPath)
+		cof, errparse := rhine.LoadZoneConfig(ChildConfig)
 		if errparse != nil {
 			log.Fatalf("Could not parse the config file.")
-			return
 		}
 
-		cof.ZoneName = newZoneName
-		cof.ParentServerAddr = parentServer
+		// Overwrite config if needed
+		if ZoneName != "" {
+			cof.ZoneName = ZoneName
+		}
+
+		if ParentServer != "" {
+			cof.ParentServerAddr = ParentServer
+		}
+
+		// Construct AuthorityLevel
+		authl := 0b0000
+		if ZoneIsIndependent {
+			authl += 0b0001
+		}
+		if ZoneIsDelegationOnly {
+			authl += 0b1000
+		}
+		var reqAuthorityLevel rhine.AuthorityLevel
+		reqAuthorityLevel = rhine.AuthorityLevel(authl)
 
 		// Make a new ZoneManager
 		nzm := rhine.NewZoneManager(cof)
 
 		// Make a new Csr
-		csr, errcsr := CreateSignedCSR(reqAuthorityLevel, expirationTime, []rhine.Authority{}, []rhine.Log{}, 0)
+		csr, errcsr := nzm.CreateSignedCSR(reqAuthorityLevel, expirationTime, nzm.Ca, nzm.LogList, revocationBit)
 		if errcsr != nil {
-			log.Fatalif("Creation of the csr failed!")
+			log.Fatalf("Creation of the csr failed! ", errcsr)
 			return
 		}
+		log.Println("Created a signed CSR")
 
 		// Connect to the parent
-		conn := getGRPCConn(cof.ParentServerAddr)
+		conn := rhine.GetGRPCConn(cof.ParentServerAddr)
+		log.Println("Established connection to Parent at: ", cof.ParentServerAddr)
 
 		defer conn.Close()
 		c := ps.NewParentServiceClient(conn)
@@ -72,14 +98,16 @@ var RequestDelegCmd = &cobra.Command{
 		defer cancel()
 		r, err := c.InitDelegation(ctx, &ps.InitDelegationRequest{Rid: csr.ReturnRid(), Csr: csr.ReturnRawBytes()})
 		if err != nil {
-			log.Fatalf("could not get a response: %v", err)
+			log.Fatalf("No response from ParentServer: %v", err)
 		}
+		log.Println("Received a response from parent for Delegation Req.: ", r)
+		// Close connection
+		conn.Close()
 
 		// Parse the response
 		apv := &rhine.RhineSig{
-			Data:          r.Approvalcommit.Data,
-			Signature:     r.Approvalcommit.Sig,
-			Supportedalgo: 0,
+			Data:      r.Approvalcommit.Data,
+			Signature: r.Approvalcommit.Sig,
 		}
 
 		// Parse parent certificate
@@ -90,44 +118,59 @@ var RequestDelegCmd = &cobra.Command{
 
 		// Check wheter acsr is valid
 		if !apv.Verify(pcertp.PublicKey) {
-			log.Fatalln("Checking acsr failed")
+			log.Fatal("Checking acsr failed")
 		}
 
 		// Forward response content to CA
 		caacsr := &ca.RhineSig{
-			Data:          r.Approvalcommit.Data,
-			Sig:           r.Approvalcommit.Sig,
-			Supportedalgo: 0, // TODO  change that!
+			Data: r.Approvalcommit.Data,
+			Sig:  r.Approvalcommit.Sig,
 		}
 
-		conn := getGRPCConn(cof.CAServerAddr)
+		connCA := rhine.GetGRPCConn(cof.CAServerAddr)
 
-		defer conn.Close()
-		cca := ca.NewCAServiceClient(conn)
+		defer connCA.Close()
+		cca := ca.NewCAServiceClient(connCA)
 
 		// Send delegation request to the server
 		ctxca, cancelca := context.WithTimeout(context.Background(), time.Second)
 		defer cancelca()
 
-		rca, errca := cca.SubmitNewDelegCA(ctxca, &ca.SubmitNewDelegCARequest{Rcertp: r.Rcertp, Acsr: caacsr})
+		rCA, errca := cca.SubmitNewDelegCA(ctxca, &ca.SubmitNewDelegCARequest{Rcertp: r.Rcertp, Acsr: caacsr, Rid: csr.ReturnRid()})
 		if errca != nil {
-			log.Fatalf("could not get a response: %v", err)
+			log.Fatalf("No reponse from CA: %v", err)
 		}
 
-		log.Println("Test run succesfull")
+		//TODO More Checks
+		_, parseerr := x509.ParseCertificate(rCA.Rcertc)
+		if parseerr != nil {
+			log.Fatal("Failed parsing returned RHINE cert ", parseerr)
+		}
+
+		if rhine.StoreCertificatePEM(OutputPath, rCA.Rcertc) != nil {
+			log.Fatal("Failed storing returned RHINE cert")
+		}
+		log.Println("Certificate stored")
+		// Print the cert
+
+		/*
+			newchildcert, _ := cx509.ParseCertificate(rCA.Rcertc)
+			prettyCert, _ := certinfo.CertificateText(newchildcert)
+			log.Println("\n", prettyCert)
+		*/
+
 	},
 }
 
 var RunParentServer = &cobra.Command{
 	Example: "./run_zoneManager RunParentServer",
-	Use:     "RequestDeleg",
+	Use:     "RunParentServer",
 	Short:   "TODO",
 	Long:    "TODO",
 	Args:    nil,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Parse config
-		configPath := "configs/parentExample.json"
-		cof, errparse := rhine.LoadZoneConfig(configPath)
+		cof, errparse := rhine.LoadZoneConfig(ParentConfig)
 		if errparse != nil {
 			log.Fatalf("Could not parse the config file.")
 		}
@@ -141,8 +184,9 @@ var RunParentServer = &cobra.Command{
 		}
 
 		s := grpc.NewServer()
-		pf.RegisterCAServiceServer(s, &pserver.PServer{Zm: nzm})
+		ps.RegisterParentServiceServer(s, &pserver.PServer{Zm: nzm})
 
+		log.Println("ParentServer is running.")
 		if err := s.Serve(lis); err != nil {
 			log.Fatalf("Serving failed: %v", err)
 		}
@@ -158,6 +202,17 @@ func Execute() {
 	}
 }
 */
+
+func init() {
+	RequestDelegCmd.Flags().StringVar(&ZoneName, "zone", "", "NameOfChildZone")
+	RequestDelegCmd.Flags().StringVar(&OutputPath, "output", "data/childCertRHINE.pem", "Address with port of parent server")
+	RequestDelegCmd.Flags().StringVar(&ChildConfig, "config", "configs/childExample.json", "ConfigPath")
+	RequestDelegCmd.Flags().BoolVar(&ZoneIsIndependent, "ind", true, "Flag Independent ChildZone")
+	RequestDelegCmd.Flags().BoolVar(&ZoneIsDelegationOnly, "delegOnly", false, "Flag Independent ChildZone")
+	RequestDelegCmd.Flags().StringVar(&ParentServer, "parentaddr", "", "Address with port of parent server")
+
+	RunParentServer.Flags().StringVar(&ParentConfig, "config", "configs/parentExample.json", "ConfigPath")
+}
 
 func main() {
 	rootCmd.AddCommand(RequestDelegCmd)

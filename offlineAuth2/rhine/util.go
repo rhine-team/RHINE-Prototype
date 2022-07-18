@@ -151,6 +151,7 @@ func LoadCertificateRequestPEM(path string) ([]byte, error) {
 func StoreCertificatePEM(path string, cert []byte) error {
 	file, err := os.Create(path)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 
@@ -162,6 +163,7 @@ func StoreCertificatePEM(path string, cert []byte) error {
 
 	err = pem.Encode(file, &pemcert)
 	if err != nil {
+		log.Println(err)
 		return err
 	}
 	file.Close()
@@ -363,7 +365,7 @@ func PublicKeyFromFile(path string) (interface{}, error) {
 
 	} else if block.Type == "RHINE Ed25519 PUBLIC KEY" {
 		pubKey := block.Bytes
-		return pubKey, nil
+		return ed25519.PublicKey(pubKey), nil
 	} else {
 		return nil, errors.New("unsupported key")
 	}
@@ -407,7 +409,59 @@ func CreateSelfSignedCertCA(pubkey interface{}, privkey interface{}) ([]byte, er
 	return certbytes, err
 }
 
-func getGRPCConn(addr string) *grpc.ClientConn {
+// The point of this func is just to create a cert signed by some CA for testing purposes
+func CreateCertificateUsingCA(pubkey interface{}, privkey interface{}, privKeyCA any, pathCACert string, name string) ([]byte, error) {
+	if _, ok := pubkey.(*ed25519.PublicKey); ok {
+		pubkey = *pubkey.(*ed25519.PublicKey)
+	}
+	template := x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: name},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour * 24 * 356),
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		DNSNames:              []string{name},
+	}
+
+	parent, errL := LoadCertificatePEM(pathCACert)
+	if errL != nil {
+		return nil, errL
+	}
+
+	certbytes, err := x509.CreateCertificate(rand.Reader, &template, parent, pubkey, privKeyCA)
+	if err != nil {
+		log.Println("Error creating testing cert signed by CA", err)
+	}
+	return certbytes, err
+}
+
+func EqualKeys(a any, b any) bool {
+	//log.Printf("KEY ONE: %+v,  \t KEY TWO: %+v", a, b)
+	switch a.(type) {
+	case ed25519.PublicKey:
+		bk, ok := b.(ed25519.PublicKey)
+		if !ok {
+			log.Println("Type mismatch, ed25519")
+			return false
+		}
+
+		return bk.Equal(a.(ed25519.PublicKey))
+	case *rsa.PublicKey:
+		bk, ok := b.(*rsa.PublicKey)
+		if !ok {
+			log.Println("Type mismatch, RSA")
+			return false
+		}
+		return bk.Equal(a.(*rsa.PublicKey))
+	default:
+		log.Printf("EqualKeys: False type. Type a: %T, Type b: %T", a, b)
+		return false
+	}
+}
+
+func GetGRPCConn(addr string) *grpc.ClientConn {
 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.CallContentSubtype(cbor.CBOR{}.Name())))
 	if err != nil {
 		log.Fatalf("Could not connect: %v", err)

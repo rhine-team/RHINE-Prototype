@@ -3,6 +3,7 @@ package rhine
 import (
 	"crypto"
 	"fmt"
+	"log"
 )
 
 type ZoneOwner struct {
@@ -57,30 +58,47 @@ func (al AuthorityLevel) CheckDOLSet() bool {
 }
 
 func (al AuthorityLevel) CheckLegalAuthLevel() bool {
-	return al == 0b0000 || al == 0b0011 || al == 0b0011 || al == 0b0101 || al == 0b1001 || al == 0b0001
+	// TODO: Check this again!
+	return true
+	//return al == 0b0000 || al == 0b0011 || al == 0b0011 || al == 0b0101 || al == 0b1001 || al == 0b0001
 }
 
 // Check legal delegation
 func CheckLegalDelegationAuthority(parentAL AuthorityLevel, childAL AuthorityLevel) bool {
+	// Check if flag combination is legal
 	res := parentAL.CheckLegalAuthLevel() && childAL.CheckLegalAuthLevel()
 	if !res {
 		return false
 	}
 
-	if parentAL.CheckEOISet() {
-		// Child CANNOT be independent!
-		return !childAL.CheckINDSet()
-	} else if parentAL.CheckTERSet() {
-		// parent is terminating, meaning no delegation is legit
-		return false
-	} else if parentAL.CheckDOLSet() {
-		// parent is delegation only, TODO: check if legal
-		return false
-	} else if parentAL.CheckINDSet() {
-		// parent is IND without further restrictions
-		return true
-	} else {
-		// parent is NON-IND, should not be able to delegate
+	/*
+		if parentAL.CheckEOISet() {
+			// Child CANNOT be independent!
+			return !childAL.CheckINDSet()
+		} else if parentAL.CheckTERSet() {
+			// parent is terminating, meaning no delegation is legit
+			return false
+		} else if parentAL.CheckDOLSet() {
+			// parent is delegation only, TODO: check if legal
+			return false
+		} else if parentAL.CheckINDSet() {
+			// parent is IND without further restrictions
+			return true
+		} else {
+			// parent is NON-IND, should not be able to delegate
+			return false
+		}
+	*/
+
+	//TODO: Check this again!
+	if !parentAL.CheckINDSet() {
+		log.Println("Failed because parent is non-IND!")
 		return false
 	}
+
+	if parentAL.CheckDOLSet() {
+		log.Println("Failed because parent is DOL")
+		return false
+	}
+	return true
 }

@@ -26,6 +26,7 @@ message Lwit {
 	string Log = 2;
 	bytes NdsHash = 3;
 	bytes Sig = 4;
+	bytes Data = 5;
 }
 
 message Acfm {
@@ -63,12 +64,12 @@ message DemandLoggingResponse {
 
 
 message SubmitACFMRequest {
-  repeated Acfm Acfms = 1;
+  repeated bytes Acfms = 1;
   bytes Rid = 2;
 }
 
 message SubmitACFMResponse {
-  RhineSig Lcfm = 1;
+  bytes Lcfm = 1;
   bytes SCT = 2;
   bytes Rid = 3;
 }

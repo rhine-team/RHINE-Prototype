@@ -5,9 +5,9 @@
     "ServerAddress" : "localhost:10000",
     "RootCertsPath" : "data/roots/",
     
-    	"LogsAddress" :       ["localhost:50016"],
+    	"LogsName" :       ["localhost:50016"],
 	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_pub.pem"],
 	
-	"AggregatorAddress" :  ["localhost:50050"],
+	"AggregatorName" :  ["localhost:50050"],
 	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"]
 }

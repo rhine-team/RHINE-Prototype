@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 
-	//"github.com/rhine-team/RHINE-Prototype/offlineAuth2/cbor"
+	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth2/cbor"
 	pf "github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/ca"
 	cs "github.com/rhine-team/RHINE-Prototype/offlineAuth2/components/ca/caserver"
 
@@ -42,6 +42,7 @@ var rootCmd = &cobra.Command{
 		s := grpc.NewServer()
 		pf.RegisterCAServiceServer(s, &cs.CAServer{Ca: cas})
 
+		log.Println("RHINE Certificate Authority is online at: ", cof.ServerAddress)
 		if err := s.Serve(lis); err != nil {
 			log.Fatalf("Serving failed: %v", err)
 		}

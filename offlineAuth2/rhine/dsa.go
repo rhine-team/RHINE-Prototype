@@ -2,6 +2,7 @@ package rhine
 
 import (
 	//"sort"
+	"crypto/sha256"
 	"time"
 
 	"github.com/cbergoon/merkletree"
@@ -43,6 +44,24 @@ func (dsa *DSA) GetDSum() DSum {
 		Cert: dsa.cert,
 		Exp:  dsa.exp,
 	}
+}
+
+func (d *DSum) GetDSumToBytes() ([]byte, error) {
+	hasher := sha256.New()
+
+	hasher.Write([]byte(d.Dacc.Zone))
+	hasher.Write(d.Dacc.Roothash)
+	hasher.Write([]byte{byte(d.Alv)})
+	hasher.Write(d.Cert)
+
+	// expiration time
+	if timeBinary, err := d.Exp.MarshalBinary(); err != nil {
+		return nil, err
+	} else {
+		hasher.Write(timeBinary)
+	}
+
+	return hasher.Sum(nil), nil
 }
 
 /*
