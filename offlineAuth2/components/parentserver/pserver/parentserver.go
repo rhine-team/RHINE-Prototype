@@ -18,7 +18,9 @@ type PServer struct {
 func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationRequest) (*ps.InitDelegationResponse, error) {
 	res := &ps.InitDelegationResponse{}
 
-	log.Printf("InitDelegation service called %+v\n", *in)
+	//log.Printf("InitDelegation service called %+v\n", *in)
+
+	log.Printf("InitDelegation service called with RID: %s\n", rhine.EncodeBase64(in.Rid))
 
 	// Verify the received csr
 	csr, err := s.Zm.VerifyChildCSR(in.Csr)
@@ -33,6 +35,8 @@ func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationReque
 	rsig := psr.GetRhineSig()
 	//log.Printf("The following ACSR was constructed: %+v\n", rsig)
 
+	log.Println("DLGT_APPROVAL created.")
+
 	res = &ps.InitDelegationResponse{
 		Approvalcommit: &ps.RhineSig{
 			Data: rsig.Data,
@@ -41,6 +45,7 @@ func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationReque
 		Rcertp: s.Zm.Rcert.Raw,
 	}
 	//log.Printf("We send response: %+v\n", res)
-	log.Println("Delegation succesfull: InitDelegtionResponse sent")
+	//log.Printf("Delegation successfull: InitDelegationResponse sent for RID : %+v ", in.Rid)
+	log.Printf("Delegation successfull: InitDelegationResponse sent for RID : %s\n", rhine.EncodeBase64(in.Rid))
 	return res, nil
 }

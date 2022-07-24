@@ -22,7 +22,7 @@ type CAServer struct {
 
 func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCARequest) (*pf.SubmitNewDelegCAResponse, error) {
 	res := &pf.SubmitNewDelegCAResponse{}
-	log.Println("Received NewDeleg from Child")
+	log.Printf("Received NewDeleg from Child with RID %s", rhine.EncodeBase64(in.Rid))
 
 	acsr := &rhine.RhineSig{
 		Data:      in.Acsr.Data,
@@ -120,7 +120,8 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 		return res, errDL
 	}
 
-	log.Printf("Received res for Demand Logging %+v ", rDemandLog)
+	//log.Printf("Received res for Demand Logging %+v ", rDemandLog)
+	log.Printf("Received response for DemandLogging ")
 
 	// Collect Lwits
 	//TODO Multiple!
@@ -184,7 +185,7 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 	// Check match between nds and dsum
 
 	//log.Printf("Response by AGG, %+v", rAgg)
-	log.Println("Response received by AGG")
+	log.Println("Response received by aggregator for SubmitNDS")
 
 	// TODO Multiple
 	// Collect AggConfirms
@@ -238,9 +239,9 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 	//TODO SCT Checks!
 
 	// Issue Cert!
-	chilcert := s.Ca.IssueRHINECert(preRC, psr)
+	chilcert := s.Ca.IssueRHINECert(preRC, psr, rSubAcfm.SCT)
 
-	log.Println(chilcert)
+	//log.Println(chilcert)
 
 	res = &pf.SubmitNewDelegCAResponse{
 		Rcertc: chilcert.Raw,

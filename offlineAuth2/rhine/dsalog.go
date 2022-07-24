@@ -2,6 +2,7 @@ package rhine
 
 import (
 	//"crypto/sha256"
+	"errors"
 	logger "log"
 	"time"
 
@@ -22,7 +23,7 @@ func NewDSALog() *DSALog {
 	return dsalog
 }
 
-func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType) Dsp {
+func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType) (Dsp, error) {
 	log, pres := lm.zoneToDSA[PZone]
 
 	// Not present, construct empty tree
@@ -36,12 +37,13 @@ func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType) D
 		newTree, err := merkletree.NewTree(co)
 		if err != nil {
 			logger.Println("Merkletree creation failed")
-			return Dsp{}
+			return Dsp{}, err
 		}
 
 		lm.zoneToDSA[PZone] = &DSA{
 			zone: PZone,
-			//alv:
+			//TODO only for testing!
+			alv: AuthorityLevel(0b0001),
 			//exp:      time.Time
 			cert:     []byte{},
 			acc:      newTree,
@@ -69,17 +71,21 @@ func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType) D
 
 	if err != nil {
 		logger.Println("Error while getting proof", err)
+		return dsp, err
 	}
 
 	if !presBool {
 		logger.Println("Claim of absence/presence wrong!")
+		return dsp, errors.New("Claim of absence/presence wrong!")
 	}
 
-	logger.Printf("Print our Proof %+v", path)
+	if path != nil {
+		logger.Printf("Print our Proof %+v", path)
+	}
 
 	dsp.Proof = *path
 
-	return dsp
+	return dsp, nil
 }
 
 func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []byte, exp time.Time, cZone string, cAlv AuthorityLevel) error {

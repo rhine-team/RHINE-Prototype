@@ -19,7 +19,8 @@ type AggServer struct {
 
 func (s *AggServer) SubmitNDS(ctx context.Context, in *pf.SubmitNDSRequest) (*pf.SubmitNDSResponse, error) {
 	res := &pf.SubmitNDSResponse{}
-	log.Println("Received a SubmitNDSRequest")
+
+	log.Printf("SubmitNDS service called with RID: %s\n", rhine.EncodeBase64(in.Rid))
 	//log.Printf("Received request %+v", in)
 
 	// Construct rhine representation of Lwits
@@ -50,14 +51,21 @@ func (s *AggServer) SubmitNDS(ctx context.Context, in *pf.SubmitNDSRequest) (*pf
 		return res, err
 	}
 
+	log.Println("NDS is correctly signed.")
+
 	// Step 13 Checks
 	if !rhine.VerifyLwitSlice(LogWitnessList, s.AggManager.LogMap) {
 		return res, errors.New("Aggregator: One of the LogWitness failed verification!")
 	}
+
+	//log.Println("Log witnesses are valid")
+
 	// Match Lwit and NDS
 	if !nds.MatchWithLwits(LogWitnessList) {
 		return res, errors.New("Aggregator: Lwit did not match with NDS")
 	}
+
+	log.Println("Log witness list matches NDS")
 
 	acfm, errAccNDS := s.AggManager.AcceptNDSAndStore(nds)
 	if errAccNDS != nil {
@@ -75,6 +83,8 @@ func (s *AggServer) SubmitNDS(ctx context.Context, in *pf.SubmitNDSRequest) (*pf
 		Acfmg: acfmBytes,
 		Rid:   in.Rid,
 	}
+
+	log.Printf("SubmitNDSResponse sent for RID: %s\n", rhine.EncodeBase64(in.Rid))
 
 	return res, nil
 }

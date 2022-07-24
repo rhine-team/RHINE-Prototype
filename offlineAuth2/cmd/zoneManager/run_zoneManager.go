@@ -138,11 +138,12 @@ var RequestDelegCmd = &cobra.Command{
 
 		rCA, errca := cca.SubmitNewDelegCA(ctxca, &ca.SubmitNewDelegCARequest{Rcertp: r.Rcertp, Acsr: caacsr, Rid: csr.ReturnRid()})
 		if errca != nil {
+			log.Println("Request Delegation failed!")
 			log.Fatalf("No reponse from CA: %v", err)
 		}
 
 		//TODO More Checks
-		_, parseerr := x509.ParseCertificate(rCA.Rcertc)
+		childce, parseerr := x509.ParseCertificate(rCA.Rcertc)
 		if parseerr != nil {
 			log.Fatal("Failed parsing returned RHINE cert ", parseerr)
 		}
@@ -150,7 +151,9 @@ var RequestDelegCmd = &cobra.Command{
 		if rhine.StoreCertificatePEM(OutputPath, rCA.Rcertc) != nil {
 			log.Fatal("Failed storing returned RHINE cert")
 		}
+		log.Printf("Certificate: %+v ", childce)
 		log.Println("Certificate stored")
+
 		// Print the cert
 
 		/*

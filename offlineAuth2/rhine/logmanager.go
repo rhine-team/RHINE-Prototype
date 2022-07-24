@@ -40,9 +40,10 @@ type LogManager struct {
 }
 
 type RememberRequest struct {
-	Rid    []byte
-	NDS    *Nds
-	PreRCc *x509.Certificate
+	Rid        []byte
+	NDS        *Nds
+	PreRCc     *x509.Certificate
+	ParentCert *x509.Certificate
 }
 
 type LogConfig struct {
@@ -170,12 +171,16 @@ func NewLogManager(config LogConfig) *LogManager {
 
 }
 
-func (lm *LogManager) DSProof(pzone string, czone string) Dsp {
-	dsp := lm.Dsalog.DSProofRet(pzone, czone, ProofOfAbsence)
+func (lm *LogManager) DSProof(pzone string, czone string) (Dsp, error) {
+	dsp, err := lm.Dsalog.DSProofRet(pzone, czone, ProofOfAbsence)
+	if err != nil {
+		return Dsp{}, err
+	}
+
 	(&dsp).Sign(lm.privkey)
 
 	//log.Printf("DSP in LogManager after generation %+v", dsp)
-	return dsp
+	return dsp, nil
 }
 
 func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, acsr *RhineSig, precert *x509.Certificate, nds *Nds) (error, *Psr, *Lwit) {
@@ -190,9 +195,15 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 	if err := psr.Verify(lm.CertPool); err != nil {
 		return err, nil, nil
 	}
+	log.Println("DLGT_APPROVAL correctly signed, corresponds to ParentCertificate and child-parent relationship checked.")
 
 	// Check input against DSP from local DSA
-	dsp := lm.DSProof(psr.ParentZone, psr.ChildZone)
+	dsp, errdsp := lm.DSProof(psr.ParentZone, psr.ChildZone)
+	if errdsp != nil {
+		return errdsp, &psr, nil
+	}
+
+	log.Println("Querying local DSA")
 
 	// Check validity of dsp
 	// Check if proof is correct
@@ -203,10 +214,14 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 		return errors.New("Verification of DSP failed / Checks against it failed"), nil, nil
 	}
 
+	log.Println("Local DSP valid, proof is correct, corresponds to ParentCert")
+
 	// Check PreCert (lm.CertPool contains our trusted CA Certificates)
 	if err := CheckRCertValid(precert, lm.CertPool); err != nil {
 		return err, nil, nil
 	}
+	log.Println("PreCertificate correct.")
+
 	// TODO CSR PReRC?
 
 	// Check NDS
@@ -214,10 +229,13 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 		log.Printf("Failed check of NDS against CSR: %+v ", nds)
 		return errors.New("Failed check of NDS against CSR at log"), nil, nil
 	}
+	log.Println("NDS  matches CSR")
+
 	// Check Correct Signature on NDS
 	if err := nds.VerifyNDS(lm.Ca.Pubkey); err != nil {
 		return err, nil, nil
 	}
+	log.Println("NDS correctly signed.")
 
 	// Construct LogWitness
 	lwit, errlwit := CreateLwit(nds, &lm.Log, psr.csr.logs, lm.privkey)
@@ -227,9 +245,10 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 
 	// Store important data in Request cache
 	lm.RequestCache[string(psr.csr.rid)] = RememberRequest{
-		Rid:    psr.csr.rid,
-		NDS:    nds,
-		PreRCc: precert,
+		Rid:        psr.csr.rid,
+		NDS:        nds,
+		PreRCc:     precert,
+		ParentCert: rcertp,
 	}
 
 	log.Printf("Request cache entry: %+v", lm.RequestCache[string(psr.csr.rid)])
@@ -237,12 +256,15 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 	return nil, &psr, lwit
 }
 
-func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds) (Confirm, []byte, error) {
+func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds, pzone string) (Confirm, []byte, error) {
 	retConf := Confirm{}
 	aggc, err := CreateConfirm(1, nds, lm.Log.Name, dsum, lm.privkey)
 	if err != nil {
 		return retConf, nil, err
 	}
+
+	// TODO For Testing purposes only:
+	lm.Dsalog.AddDelegationStatus(pzone, AuthorityLevel(0b0001), dsum.Cert, dsum.Exp, dsum.Dacc.Zone, dsum.Alv)
 
 	return *aggc, []byte{}, nil
 }

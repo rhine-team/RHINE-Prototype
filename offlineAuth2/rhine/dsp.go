@@ -72,8 +72,9 @@ func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, 
 	//bytes.Compare(dsp.Dsum.Cert, ExtractTbsRCAndHash(rcertp.RawTBSCertificate))
 
 	// Check legal delegation
-	//TODO: ENABLE
-	//CheckLegalDelegationAuthority(alC, dsp.Dsum.Alv)
+	if !CheckLegalDelegationAuthority(dsp.Dsum.Alv, alC) {
+		return false
+	}
 
 	// TODO more checks (time)
 	return true

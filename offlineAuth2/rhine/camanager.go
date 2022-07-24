@@ -252,7 +252,7 @@ func (myca *Ca) CreateNDS(psr *Psr, certC *x509.Certificate) (*Nds, error) {
 	return nds, nil
 }
 
-func (myca *Ca) IssueRHINECert(precert *x509.Certificate, psr *Psr) *x509.Certificate {
+func (myca *Ca) IssueRHINECert(precert *x509.Certificate, psr *Psr, sct []byte) *x509.Certificate {
 	certTemplate := x509.Certificate{
 		// TODO real serial number
 		SerialNumber: precert.SerialNumber,
@@ -262,6 +262,8 @@ func (myca *Ca) IssueRHINECert(precert *x509.Certificate, psr *Psr) *x509.Certif
 		NotAfter:     precert.NotAfter,
 		KeyUsage:     precert.KeyUsage,
 		DNSNames:     precert.DNSNames,
+
+		RawSCT: sct, // TODO Only for showcase
 	}
 	rhinext, _ := psr.csr.CreateCSRExtension()
 

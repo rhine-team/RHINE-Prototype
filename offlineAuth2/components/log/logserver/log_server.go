@@ -22,7 +22,10 @@ func (s *LogServer) DSProofRet(ctx context.Context, in *pf.DSProofRetRequest) (*
 
 	log.Printf("Received a DSProofRet request: %+v", in)
 
-	dsp := s.LogManager.DSProof(in.Parentzone, in.Childzone)
+	dsp, dsperr := s.LogManager.DSProof(in.Parentzone, in.Childzone)
+	if dsperr != nil {
+		return res, dsperr
+	}
 
 	// Encode and send
 	dspseri, err := rhine.SerializeStructure[rhine.Dsp](dsp)
@@ -40,7 +43,7 @@ func (s *LogServer) DSProofRet(ctx context.Context, in *pf.DSProofRetRequest) (*
 func (s *LogServer) DemandLogging(ctx context.Context, in *pf.DemandLoggingRequest) (*pf.DemandLoggingResponse, error) {
 	res := &pf.DemandLoggingResponse{}
 
-	log.Println("Received DemandLogging Request")
+	log.Printf("DemandLogging service called with RID: %s\n", rhine.EncodeBase64(in.Rid))
 	//log.Printf("Request looks like: %+v ", in)
 
 	// Create RHINE internal representations
@@ -111,9 +114,11 @@ func (s *LogServer) SubmitACFM(ctx context.Context, in *pf.SubmitACFMRequest) (*
 		return res, errors.New("Wrong RID on this Request")
 	}
 	nds := rq.NDS
-	precert := rq.PreRCc
+	// TODO
+	//precert := rq.PreRCc
+	parcert := rq.ParentCert
 
-	log.Println(precert)
+	//log.Println(precert)
 
 	// Check match of confirms with nds
 	if !nds.MatchWithConfirm(aggConfirmList) {
@@ -127,13 +132,15 @@ func (s *LogServer) SubmitACFM(ctx context.Context, in *pf.SubmitACFMRequest) (*
 	log.Println("Log: All AggConfirms checked with success.")
 
 	// Create LogConfirm
-	loggconf, sct, errFinishDeleg := s.LogManager.FinishInitialDelegLog(aggConfirmList[0].Dsum, nds)
+	loggconf, sct, errFinishDeleg := s.LogManager.FinishInitialDelegLog(aggConfirmList[0].Dsum, nds, parcert.DNSNames[0])
 	if errFinishDeleg != nil {
 		return res, errFinishDeleg
 	}
 
 	// Create response
 	lconfByte, _ := loggconf.ConfirmToTransportBytes()
+
+	//sct = []byte{35, 1, 178, 32, 97, 23, 233, 32, 48, 23, 19, 101, 78}
 
 	res = &pf.SubmitACFMResponse{
 		Lcfm: lconfByte,

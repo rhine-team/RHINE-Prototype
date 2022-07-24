@@ -181,10 +181,14 @@ func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
 		return nil, err
 	}
 
+	log.Println("Signature on CSR valid")
+
 	// check if request for valid child zone
 	if ok := GetParentZone(csr.zone.Name) == zm.zone.Name; !ok {
 		return nil, errors.New("csr zone " + csr.zone.Name + " is not a child zone of " + zm.zone.Name)
 	}
+
+	log.Printf("%v is a child of %s", csr.zone.Name, GetParentZone(csr.zone.Name))
 
 	// Check if child key and saved key match (NOTE: / needs to be last char of the Path)
 	// TODO: Sanitize the name!!!
@@ -200,6 +204,8 @@ func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
 	if !EqualKeys(pKey, csr.Pkey) {
 		return nil, errors.New("Public key on parent server did not match CSR public key")
 	}
+
+	log.Println("Child public key found on ParentServer")
 
 	//log.Printf("CSR when verifying child csr %+v", csr)
 
