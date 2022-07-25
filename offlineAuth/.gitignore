@@ -1,8 +1,0 @@
-common/testdata
-test/testfulldata/
-.idea/
-parent.py
-parentkey.pem
-test.py
-/resolution
-build
