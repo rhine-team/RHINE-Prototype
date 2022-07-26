@@ -1,0 +1,16 @@
+{
+    "PrivateKeyAlgorithm": "Ed25519",
+    "PrivateKeyPath": "data/Agg1.pem",
+    "ServerAddress" : "localhost:50050",
+    "RootCertsPath" : "data/roots/",
+    
+    "LogsName" :       ["localhost:50016"],
+	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_pub.pem"],
+	
+	"AggregatorName" :  ["localhost:50050"],
+	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
+	
+	"CAName" : "localhost:10000",
+	"CAServerAddr" : "localhost:10000",
+	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem"
+}

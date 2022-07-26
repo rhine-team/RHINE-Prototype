@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package parentserver;
+
+option go_package = "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/parentserver";
+
+// Service offered by the parent
+service ParentService {
+  rpc InitDelegation (InitDelegationRequest) returns (InitDelegationResponse) {}
+}
+
+message RhineSig {
+  bytes Data = 1;
+  bytes Sig = 2;
+}
+
+// Message sent from child to parent to initialize delegation
+message InitDelegationRequest {
+  bytes Rid = 1;
+  bytes Csr = 2;
+}
+
+// Message received by child as response to delegation
+message InitDelegationResponse {
+  RhineSig Approvalcommit = 1;
+  bytes Rcertp = 2;
+}

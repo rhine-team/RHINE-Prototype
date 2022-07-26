@@ -1,5 +1,0 @@
-{
-    "PrivateKeyAlgorithm": "Ed25519",
-    "PrivateKeyPath": "data/Log1.pem",
-    "ServerAddress" : "localhost:50016"
-}

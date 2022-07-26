@@ -1,0 +1,62 @@
+package main
+
+import (
+	//"context"
+	"log"
+	"net"
+
+	//"github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
+	pf "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/log"
+	ls "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/log/logserver"
+
+	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
+	"github.com/spf13/cobra"
+
+	//"github.com/spf13/viper"
+	"google.golang.org/grpc"
+	//"google.golang.org/grpc/credentials/insecure"
+)
+
+var configPath string
+
+var rootCmd = &cobra.Command{
+	Use:   "run_Log",
+	Short: "Front-end logger",
+	Long:  "Front-end logger for RHINE, connects to a trillian-based CT backend",
+	Run: func(cmd *cobra.Command, args []string) {
+		// Parse config
+		cof, errparse := rhine.LoadLogConfig(configPath)
+		if errparse != nil {
+			log.Fatalf("Could not parse the config file.")
+		}
+
+		// Make a new Log struct
+		logm := rhine.NewLogManager(cof)
+
+		// Run the Log
+		lis, err := net.Listen("tcp", cof.ServerAddress)
+		if err != nil {
+			log.Fatalf("Listen failed: %v", err)
+		}
+
+		s := grpc.NewServer()
+		pf.RegisterLogServiceServer(s, &ls.LogServer{LogManager: logm})
+
+		log.Println("Rhine Log server online at: ", cof.ServerAddress)
+		if err := s.Serve(lis); err != nil {
+			log.Fatalf("Serving failed: %v", err)
+		}
+	},
+}
+
+func init() {
+	rootCmd.Flags().StringVar(&configPath, "config", "configs/configLog.json", "ConfigPath")
+}
+
+func main() {
+	err := rootCmd.Execute()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+}

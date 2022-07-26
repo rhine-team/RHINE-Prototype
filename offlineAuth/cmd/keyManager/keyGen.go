@@ -2,26 +2,30 @@ package main
 
 import (
 	"fmt"
-	"github.com/rhine-team/RHINE-Prototype/keyManager"
 	"log"
 	"os"
+
+	"github.com/rhine-team/RHINE-Prototype/offlineAuth/keyManager"
 )
 
 func main() {
-	fmt.Println("INSTRUCTIONS: ./keyGen [KeyType] [OutputPath]\tKeyType = RSA or Ed25519\tOutputPath = e.g keys/private.pem")
+	fmt.Println("INSTRUCTIONS: ./keyGen [KeyType] [OutputPath] [PubKey]\tKeyType = RSA or Ed25519\tOutputPath = e.g keys/private.pem\tPubKey=--pubkey (optional)")
 
-	if len(os.Args) != 3 {
+	if len(os.Args) < 3 {
 		log.Fatal("Not enough arguments")
 	}
 
+	// Decide to aso generate a pubkey or not
+	genPubkey := len(os.Args) == 4 && os.Args[3] == "--pubkey"
+
 	switch os.Args[1] {
 	case "RSA":
-		err := keyManager.CreateRSAKey(os.Args[2])
+		err := keyManager.CreateRSAKey(os.Args[2], genPubkey)
 		if err != nil {
 			log.Fatal(err)
 		}
 	case "Ed25519":
-		err := keyManager.CreateEd25519Key(os.Args[2])
+		err := keyManager.CreateEd25519Key(os.Args[2], genPubkey)
 		if err != nil {
 			log.Fatal(err)
 		}
