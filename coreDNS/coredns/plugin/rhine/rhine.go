@@ -83,8 +83,11 @@ func (rh Rhine) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) 
 		log.Errorf("Zone %s is expired", zone)
 		return dns.RcodeServerFailure, nil
 	}
-
+	ro := state.Ro()
 	answer, ns, extra, result := z.Lookup(ctx, state, qname)
+	if ro && (result == Success || result == NoData) {
+		extra = z.rhineDelegationProcessing(extra)
+	}
 
 	m := new(dns.Msg)
 	m.SetReply(r)

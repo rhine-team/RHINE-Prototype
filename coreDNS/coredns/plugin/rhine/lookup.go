@@ -31,8 +31,8 @@ const (
 // Three sets of records are returned, one for the answer, one for authority  and one for the additional section.
 func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) ([]dns.RR, []dns.RR, []dns.RR, Result) {
 	qtype := state.QType()
-	do := state.Do()
-
+	do := false
+	appendRRSIGs := true
 	// If z is a secondary zone we might not have transferred it, meaning we have
 	// all zone context setup, except the actual record. This means (for one thing) the apex
 	// is empty and we don't have a SOA record.
@@ -47,10 +47,10 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 	if qname == z.origin {
 		switch qtype {
 		case dns.TypeSOA:
-			return ap.soa(do), ap.ns(do), nil, Success
+			return ap.soa(appendRRSIGs), ap.ns(appendRRSIGs), nil, Success
 		case dns.TypeNS:
-			nsrrs := ap.ns(do)
-			glue := tr.Glue(nsrrs, do) // technically this isn't glue
+			nsrrs := ap.ns(appendRRSIGs)
+			glue := tr.Glue(nsrrs, appendRRSIGs) // technically this isn't glue
 			return nsrrs, nil, glue, Success
 		}
 	}
@@ -123,7 +123,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				// We don't need to chase CNAME chain for synthesized CNAME
 				if qtype == dns.TypeCNAME {
 					answer = []dns.RR{cname}
-					ns = ap.ns(do)
+					ns = ap.ns(appendRRSIGs)
 					extra = nil
 					rcode = Success
 				} else {
@@ -131,7 +131,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 					answer, ns, extra, rcode = z.externalLookup(ctx, state, elem, []dns.RR{cname})
 				}
 
-				if do {
+				if appendRRSIGs {
 					sigs := elem.Type(dns.TypeRRSIG)
 					sigs = rrutil.SubTypeSignature(sigs, dns.TypeDNAME)
 					dnamerrs = append(dnamerrs, sigs...)
@@ -140,7 +140,6 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				// The relevant DNAME RR should be included in the answer section,
 				// if the DNAME is being employed as a substitution instruction.
 				answer = append(dnamerrs, answer...)
-
 				return answer, ns, extra, rcode
 			}
 			// The domain name that owns a DNAME record is allowed to have other RR types
@@ -159,9 +158,9 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				continue
 			}
 
-			glue := tr.Glue(nsrrs, do)
-			if do {
-				dss := typeFromElem(elem, dns.TypeDS, do)
+			glue := tr.Glue(nsrrs, appendRRSIGs)
+			if appendRRSIGs {
+				dss := typeFromElem(elem, dns.TypeDS, appendRRSIGs)
 				nsrrs = append(nsrrs, dss...)
 			}
 
@@ -186,11 +185,11 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 
 		rrs := elem.Type(qtype)
 		// rhine: add txt records
-		rrs = append(rrs, elem.Type(dns.TypeTXT)...)
+		//rrs = append(rrs, elem.Type(dns.TypeTXT)...)
 
 		// NODATA
 		if len(rrs) == 0 {
-			ret := ap.soa(do)
+			ret := ap.soa(appendRRSIGs)
 			if do {
 				nsec := typeFromElem(elem, dns.TypeNSEC, do)
 				ret = append(ret, nsec...)
@@ -200,22 +199,13 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 
 		// Additional section processing for MX, SRV. Check response and see if any of the names are in bailiwick -
 		// if so add IP addresses to the additional section.
-		additional := z.additionalProcessing(rrs, do)
-
-		if do {
+		additional := z.additionalProcessing(rrs, appendRRSIGs)
+		if appendRRSIGs {
 			sigs := elem.Type(dns.TypeRRSIG)
 			sigs = rrutil.SubTypeSignature(sigs, qtype)
 			rrs = append(rrs, sigs...)
 		}
-
-		// rhine: add RCert to response
-		elem, found = tr.Search("_rhinecert." + z.origin)
-		if found {
-			Rcert := elem.Type(dns.TypeTXT)
-			rrs = append(rrs, Rcert...)
-		}
-
-		return rrs, ap.ns(do), additional, Success
+		return rrs, ap.ns(appendRRSIGs), additional, Success
 
 	}
 
@@ -223,7 +213,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 
 	// Found wildcard.
 	if wildElem != nil {
-		auth := ap.ns(do)
+		auth := ap.ns(appendRRSIGs)
 
 		if rrs := wildElem.TypeForWildcard(dns.TypeCNAME, qname); len(rrs) > 0 && qtype != dns.TypeCNAME {
 			ctx = context.WithValue(ctx, dnsserver.LoopKey{}, loop+1)
@@ -234,7 +224,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 
 		// NODATA response.
 		if len(rrs) == 0 {
-			ret := ap.soa(do)
+			ret := ap.soa(appendRRSIGs)
 			if do {
 				nsec := typeFromElem(wildElem, dns.TypeNSEC, do)
 				ret = append(ret, nsec...)
@@ -245,7 +235,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 		if do {
 			// An NSEC is needed to say no longer name exists under this wildcard.
 			if deny, found := tr.Prev(qname); found {
-				nsec := typeFromElem(deny, dns.TypeNSEC, do)
+				nsec := typeFromElem(deny, dns.TypeNSEC, appendRRSIGs)
 				auth = append(auth, nsec...)
 			}
 
@@ -267,13 +257,13 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 		}
 	}
 
-	ret := ap.soa(do)
+	ret := ap.soa(appendRRSIGs)
 	if do {
 		deny, found := tr.Prev(qname)
 		if !found {
 			goto Out
 		}
-		nsec := typeFromElem(deny, dns.TypeNSEC, do)
+		nsec := typeFromElem(deny, dns.TypeNSEC, appendRRSIGs)
 		ret = append(ret, nsec...)
 
 		if rcode != NameError {
@@ -289,7 +279,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 			if ss, found := tr.Prev(wildcard); found {
 				// Only add this nsec if it is different than the one already added
 				if ss.Name() != deny.Name() {
-					nsec := typeFromElem(ss, dns.TypeNSEC, do)
+					nsec := typeFromElem(ss, dns.TypeNSEC, appendRRSIGs)
 					ret = append(ret, nsec...)
 				}
 			}
@@ -442,4 +432,27 @@ func (z *Zone) additionalProcessing(answer []dns.RR, do bool) (extra []dns.RR) {
 	}
 
 	return extra
+}
+
+func (z *Zone) rhineDelegationProcessing(rrs []dns.RR) []dns.RR {
+	tr := z.Tree
+	if rcert, ok := tr.Search("_rhinecert." + z.origin); ok {
+		Rcert := rcert.Type(dns.TypeTXT)
+		rrs = append(rrs, Rcert...)
+	}
+	if rSig, ok := tr.Search("_dsp." + z.origin); ok {
+		RhineSig := rSig.Type(dns.TypeTXT)
+		rrs = append(rrs, RhineSig...)
+	}
+	// TODO(lou) give RhineSig a special name such that it can be explicitly added?
+	if zoneAuth, ok := tr.Search(z.origin); ok {
+		rrs = append(rrs, zoneAuth.Type(dns.TypeTXT)...)
+		rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
+	}
+	//if rSig, ok := tr.Search("_rhineSig." + z.origin); ok {
+	//	RhineSig := rSig.Type(dns.TypeTXT)
+	//	rrs = append(rrs, RhineSig...)
+	//}
+
+	return rrs
 }

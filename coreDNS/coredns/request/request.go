@@ -10,6 +10,10 @@ import (
 	"github.com/miekg/dns"
 )
 
+const (
+	_RO = 1 << 14 // RHINE OK
+)
+
 // Request contains some connection state and is useful in plugin.
 type Request struct {
 	Req *dns.Msg
@@ -22,6 +26,7 @@ type Request struct {
 	// Both Size and Do set these values (and cache them).
 	size uint16 // UDP buffer size, or 64K in case of TCP.
 	do   bool   // DNSSEC OK value
+	ro   bool   // RHINE OK value
 
 	// Caches
 	family    int8   // transport's family.
@@ -154,8 +159,33 @@ func (r *Request) Do() bool {
 	return r.do
 }
 
+func (r *Request) Ro() bool {
+	if r.size != 0 {
+		return r.ro
+	}
+
+	r.Size()
+	return r.ro
+}
+
 // Len returns the length in bytes in the request.
 func (r *Request) Len() int { return r.Req.Len() }
+
+func GetRo(rr *dns.OPT) bool {
+	return rr.Hdr.Ttl&_RO == _RO
+}
+
+func SetRoOpt(rr *dns.OPT, do ...bool) {
+	if len(do) == 1 {
+		if do[0] {
+			rr.Hdr.Ttl |= _RO
+		} else {
+			rr.Hdr.Ttl &^= _RO
+		}
+	} else {
+		rr.Hdr.Ttl |= _RO
+	}
+}
 
 // Size returns if buffer size *advertised* in the requests OPT record.
 // Or when the request was over TCP, we return the maximum allowed size of 64K.
@@ -167,6 +197,7 @@ func (r *Request) Size() int {
 	size := uint16(0)
 	if o := r.Req.IsEdns0(); o != nil {
 		r.do = o.Do()
+		r.ro = GetRo(o)
 		size = o.UDPSize()
 	}
 
@@ -195,6 +226,9 @@ func (r *Request) SizeAndDo(m *dns.Msg) bool {
 
 		if o.Do() {
 			mo.SetDo()
+		}
+		if GetRo(o) {
+			SetRoOpt(mo)
 		}
 		return true
 	}

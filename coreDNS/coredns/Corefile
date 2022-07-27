@@ -1,3 +1,10 @@
-rhine-ns.com:100 {
-    rhine rhine.db
+rhine-test.com:10001 {
+    root ./zones
+    rhine rhine-test.db
+    auto rhine-test.com {
+        directory .
+    }
+    reload 20s
+    log
 }
+
