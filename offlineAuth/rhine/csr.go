@@ -157,9 +157,11 @@ func VerifyCSR(csr []byte) (*Csr, error) {
 
 }
 
-func (csr *Csr) CheckAgainstPreCert(precert *x509.Certificate) bool {
+func (csr *Csr) CheckAgainstCert(precert *x509.Certificate) bool {
 	cs := csr.csr
-	return cs.Subject.String() == precert.Subject.String() && EqualKeys(cs.PublicKey, precert.PublicKey)
+	res := cs.Subject.String() == precert.Subject.String() && EqualKeys(cs.PublicKey, precert.PublicKey)
+	res = res && precert.DNSNames[0] == cs.DNSNames[0]
+	return res
 }
 
 func (csr *Csr) ReturnRawBytes() []byte {

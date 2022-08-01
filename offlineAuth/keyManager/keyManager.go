@@ -7,8 +7,10 @@ import (
 	"crypto/rsa"
 
 	//"log"
+	"fmt"
 	"strings"
 
+	"github.com/google/certificate-transparency-go/x509"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
 )
 
@@ -35,6 +37,10 @@ func CreateRSAKey(path string, pubkey bool) error {
 	if err != nil {
 		return err
 	}
+
+	// Print hex-string DER
+	fmt.Println("DER of key as hex string: ", rhine.PEMBytesToHexString(x509.MarshalPKCS1PrivateKey(PrivateKey)))
+
 	return nil
 }
 
@@ -59,6 +65,10 @@ func CreateEd25519Key(path string, pubkey bool) error {
 	if err != nil {
 		return err
 	}
+
+	// Print hex-string DER
+	fmt.Println("DER of private key as hex string: ", rhine.PEMBytesToHexString(privatekey))
+
 	return nil
 }
 

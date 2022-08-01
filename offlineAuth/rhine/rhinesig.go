@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"errors"
+	"log"
 )
 
 const (
@@ -51,6 +52,10 @@ func (rs *RhineSig) Sign(priv interface{}) error {
 		err = errors.New("unsupported private key type")
 	}
 
+	if err != nil {
+		log.Println("Error during rhine signature signing: ", err)
+	}
+
 	return err
 }
 
@@ -71,9 +76,10 @@ func (rs *RhineSig) Verify(pub crypto.PublicKey) bool {
 		hash := sha256.Sum(nil)
 		err := rsa.VerifyPSS(pub.(*rsa.PublicKey), crypto.SHA256, hash, rs.Signature, nil)
 		if err != nil {
+			log.Println("Error during RSA signature verification: ", err)
 			return false
 		}
 	}
 
-	return false
+	return true
 }

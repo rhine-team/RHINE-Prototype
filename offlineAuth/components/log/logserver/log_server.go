@@ -114,11 +114,8 @@ func (s *LogServer) SubmitACFM(ctx context.Context, in *pf.SubmitACFMRequest) (*
 		return res, errors.New("Wrong RID on this Request")
 	}
 	nds := rq.NDS
-	// TODO
 	precert := rq.PreRCc
 	parcert := rq.ParentCert
-
-	//log.Println(precert)
 
 	// Check match of confirms with nds
 	if !nds.MatchWithConfirm(aggConfirmList) {
@@ -131,7 +128,7 @@ func (s *LogServer) SubmitACFM(ctx context.Context, in *pf.SubmitACFMRequest) (*
 
 	log.Println("Log: All AggConfirms checked with success.")
 
-	// Create LogConfirm
+	// Create LogConfirm and SCTs
 	loggconf, sct, errFinishDeleg := s.LogManager.FinishInitialDelegLog(aggConfirmList[0].Dsum, nds, parcert.DNSNames[0], precert)
 	if errFinishDeleg != nil {
 		return res, errFinishDeleg
@@ -140,13 +137,13 @@ func (s *LogServer) SubmitACFM(ctx context.Context, in *pf.SubmitACFMRequest) (*
 	// Create response
 	lconfByte, _ := loggconf.ConfirmToTransportBytes()
 
-	//sct = []byte{35, 1, 178, 32, 97, 23, 233, 32, 48, 23, 19, 101, 78}
-
 	res = &pf.SubmitACFMResponse{
 		Lcfm: lconfByte,
 		SCT:  sct,
 		Rid:  in.Rid,
 	}
+
+	log.Println("Logger: SCT created, send response")
 
 	return res, nil
 

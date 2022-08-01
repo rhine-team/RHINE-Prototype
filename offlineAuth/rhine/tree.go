@@ -243,3 +243,16 @@ func (p *MPathProof) VerifyMPathProof(roothash []byte, zname string) (bool, erro
 	// test if the root matches the given root
 	return bytes.Compare(roothash, hash) == 0, nil
 }
+
+/*
+func (mp MPathProof) MProofToBytes() []byte {
+	res := []byte{}
+
+	// Path
+	for _, v := range mp.Path {
+		res = append(res, v...)
+	}
+
+
+}
+*/

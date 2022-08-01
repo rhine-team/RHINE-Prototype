@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	//"encoding/hex"
+	"bytes"
 	"log"
 	"net"
 
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
+	"github.com/google/certificate-transparency-go/x509util"
 	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/components/ca"
 	ps "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/parentserver"
@@ -122,6 +124,9 @@ var RequestDelegCmd = &cobra.Command{
 			log.Fatal("Checking acsr failed")
 		}
 
+		log.Println("Parent certificate parsed and parent signed CSR is valid")
+		log.Println("Forwarding response to CA for certificate request")
+
 		// Forward response content to CA
 		caacsr := &ca.RhineSig{
 			Data: r.Approvalcommit.Data,
@@ -140,29 +145,73 @@ var RequestDelegCmd = &cobra.Command{
 		rCA, errca := cca.SubmitNewDelegCA(ctxca, &ca.SubmitNewDelegCARequest{Rcertp: r.Rcertp, Acsr: caacsr, Rid: csr.ReturnRid()})
 		if errca != nil {
 			log.Println("Request Delegation failed!")
-			log.Fatalf("No reponse from CA: %v", err)
+			log.Fatalf("Negative response from CA: %v", err)
 		}
+		log.Println("Received response from CA")
 
-		//TODO More Checks
+		// Parse received certificate
 		childce, parseerr := x509.ParseCertificate(rCA.Rcertc)
 		if parseerr != nil {
 			log.Fatal("Failed parsing returned RHINE cert ", parseerr)
 		}
 
+		// Last checks
+
+		// Collect LOG_CONFIRMS
+		logConfirmList := []rhine.Confirm{}
+		countLCFM := 0
+
+		for _, lcfm := range rCA.Lcfms {
+			logConf, errTranspConfL := rhine.TransportBytesToConfirm(lcfm)
+			if errTranspConfL != nil {
+				log.Fatalf("Could not unmarshall LOG_CONFIRM")
+			}
+			logConfirmList = append(logConfirmList, *logConf)
+			countLCFM++
+		}
+		log.Println("Received ", countLCFM, " LOG_CONFIRM(S)")
+
+		// Check if LogConfirms are correctly signed
+		if !rhine.VerifyLogConfirmSlice(logConfirmList, nzm.LogMap) {
+			log.Fatalf("A LogConfirm was not correctly signed!")
+		}
+		log.Println("All LogConfirms checked and valid")
+
+		// Verify certificate issuance and verify the SCT included in the certificate
+		if err := rhine.VerifyEmbeddedSCTs(childce, nzm.CaCert, nzm.LogMap[nzm.LogList[0]].Pubkey); err != nil {
+			log.Fatalf("Verification of certificate included SCTs failed!")
+		}
+		log.Println("Certificate issued by trusted CA and included SCTs are valid.")
+
+		// Check if issued Certificate matches our created CSR
+		if !csr.CheckAgainstCert(childce) {
+			log.Fatalf("Cerificate does not match Certificate Signing Request!")
+		}
+		log.Println("Certificate matches CSR.")
+
+		// Check DSum and received RCert match
+		// We have to remove the SCTList to make the two TBSCerts comparable
+		tbsChildCert := rhine.ExtractTbsRCAndHash(childce, true)
+
+		if bytes.Compare(logConfirmList[0].Dsum.Cert, tbsChildCert) != 0 {
+			// Print parsed TBSCert from childce
+			nosct, _ := x509.RemoveSCTList(childce.RawTBSCertificate)
+			tbscerti, _ := x509.ParseTBSCertificate(nosct)
+			log.Println(x509util.CertificateToString(tbscerti))
+
+			log.Fatalf("Failed: DSum certificate data does not match received certificate data!")
+		}
+		log.Println("DSum und received RCert match")
+
+		// Store the certificate
 		if rhine.StoreCertificatePEM(OutputPath, rCA.Rcertc) != nil {
 			log.Fatal("Failed storing returned RHINE cert")
 		}
-		log.Printf("Certificate: %+v ", childce)
+
+		// Print certificate
+		log.Println(x509util.CertificateToString(childce))
+
 		log.Println("Certificate stored")
-
-		// Print the cert
-
-		/*
-			newchildcert, _ := cx509.ParseCertificate(rCA.Rcertc)
-			prettyCert, _ := certinfo.CertificateText(newchildcert)
-			log.Println("\n", prettyCert)
-		*/
-
 	},
 }
 
@@ -198,15 +247,6 @@ var RunParentServer = &cobra.Command{
 	},
 }
 
-/*
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error while executing CLI '%s'", err)
-		os.Exit(1)
-	}
-}
-*/
-
 func init() {
 	RequestDelegCmd.Flags().StringVar(&ZoneName, "zone", "", "NameOfChildZone")
 	RequestDelegCmd.Flags().StringVar(&OutputPath, "output", "data/childCertRHINE.pem", "Address with port of parent server")
@@ -226,14 +266,4 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Read config files
-	/*
-		viper.SetConfigName("parent")
-		viper.SetConfigType("json")
-		viper.AddConfigPath("config/")
-
-		if err := viper.ReadInConfig(); err != nil {
-			log.Fatalf("Fatal error config file: %v \n", err)
-		}
-	*/
 }

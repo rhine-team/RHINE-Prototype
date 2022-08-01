@@ -27,7 +27,8 @@ type ZoneManager struct {
 	LogList []string
 	AggList []string
 
-	Ca Authority
+	Ca     Authority
+	CaCert *x509.Certificate
 
 	ChildrenKeyDirectoryPath string
 }
@@ -46,9 +47,9 @@ type ZoneConfig struct {
 	AggregatorName []string
 	AggPubKeyPaths []string
 
-	CAName       string
-	CAServerAddr string
-	CAPubKeyPath string
+	CAName            string
+	CAServerAddr      string
+	CACertificatePath string
 
 	ChildrenKeyDirectoryPath string
 }
@@ -73,6 +74,7 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 	var privKey interface{}
 	var pubkey interface{}
 	var cert *x509.Certificate
+	var certCA *x509.Certificate
 
 	if config.PrivateKeyPath == "" {
 		log.Fatalf("ZoneManager: No PrivateKey Path was set")
@@ -96,9 +98,7 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 	}
 
 	//Load cert
-	if config.CertificatePath == "" {
-
-	} else {
+	if config.CertificatePath != "" {
 		var err error
 		cert, err = LoadCertificatePEM(config.CertificatePath)
 		if err != nil {
@@ -106,7 +106,16 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 		}
 	}
 
-	caPk, _ := PublicKeyFromFile(config.CAPubKeyPath)
+	//Load CA cert
+	if config.CACertificatePath != "" {
+		var err error
+		certCA, err = LoadCertificatePEM(config.CACertificatePath)
+		if err != nil {
+			log.Fatal("Error loading CA certificate: ", err)
+		}
+	}
+
+	caPk := certCA.PublicKey
 
 	myzone := ZoneManager{
 		privkey: privKey,
@@ -119,6 +128,7 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 			Name:   config.CAName,
 			Pubkey: caPk,
 		},
+		CaCert:                   certCA,
 		ChildrenKeyDirectoryPath: config.ChildrenKeyDirectoryPath,
 	}
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
+	//"github.com/google/certificate-transparency-go/x509util"
 )
 
 type Nds struct {
@@ -29,23 +30,6 @@ type NdsToSign struct {
 
 func (n *Nds) Sign(priv interface{}) error {
 
-	/*
-			var message bytes.Buffer
-			enc := gob.NewEncoder(&message)
-
-			err := enc.Encode(n.Nds)
-
-			if err != nil {
-				return err
-			}
-
-
-
-		n.Signednds = RhineSig{
-			Data: message.Bytes(),
-		}
-	*/
-
 	byt, err := n.NdsToSignBytes()
 	if err != nil {
 		return err
@@ -63,16 +47,7 @@ func (n *Nds) Sign(priv interface{}) error {
 }
 
 func (n *Nds) VerifyNDS(pubKey any) error {
-	/*
-		var message bytes.Buffer
-		enc := gob.NewEncoder(&message)
-		err := enc.Encode(n.Nds)
 
-		if err != nil {
-			return err
-		}
-		encNDS := message.Bytes()
-	*/
 	encNDS, err := n.NdsToSignBytes()
 	if err != nil {
 		return err
@@ -107,7 +82,6 @@ func (n *Nds) CheckAgainstCSR(csr *Csr) bool {
 	matching = matching && n.Nds.Zone.Name == csr.zone.Name
 	// Check Al
 	matching = matching && n.Nds.Al == csr.al
-	// TODO more stuff?
 
 	return matching
 }
@@ -202,9 +176,22 @@ func BytesToNds(byt []byte) (*Nds, error) {
 	return &nds, nil
 }
 
-func ExtractTbsRCAndHash(cert *x509.Certificate) []byte {
+func ExtractTbsRCAndHash(cert *x509.Certificate, removeSCT bool) []byte {
 	hasher := sha256.New()
-	//log.Println("TBS looks like this: ", cert.RawTBSCertificate)
-	hasher.Write(cert.RawTBSCertificate)
+
+	// Remove CT Poison
+	tbsbytes, _ := x509.RemoveCTPoison(cert.RawTBSCertificate)
+
+	if removeSCT {
+		// At least one SCTList has to be present
+		// We assume that Cert embedding SCTs is not poisoned
+		bytes, _ := x509.RemoveSCTList(cert.RawTBSCertificate)
+		hasher.Write(bytes)
+	} else {
+		//tbsce, _ := x509.ParseTBSCertificate(tbsbytes)
+		//log.Println(x509util.CertificateToString(tbsce))
+		hasher.Write(tbsbytes)
+	}
+
 	return hasher.Sum(nil)
 }

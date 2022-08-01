@@ -19,6 +19,7 @@ import (
 	//ct "github.com/google/certificate-transparency-go"
 	//ctgo "github.com/google/certificate-transparency/go"
 	//"github.com/google/certificate-transparency-go/asn1"
+	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
 	//"github.com/google/certificate-transparency-go/x509/pkix"
 )
@@ -188,6 +189,9 @@ func (lm *LogManager) DSProof(pzone string, czone string) (Dsp, error) {
 
 	(&dsp).Sign(lm.privkey)
 
+	// TODO remove
+	log.Println("DSP signature validation: ", (&dsp).Sig.Verify(lm.PubKey))
+
 	//log.Printf("DSP in LogManager after generation %+v", dsp)
 	return dsp, nil
 }
@@ -232,7 +236,7 @@ func (lm *LogManager) VerifyNewDelegationRequestLog(rcertp *x509.Certificate, ac
 	log.Println("PreCertificate correct.")
 
 	// Check CSR matching PreCert
-	if !psr.csr.CheckAgainstPreCert(precert) {
+	if !psr.csr.CheckAgainstCert(precert) {
 		return errors.New("PreCert and CSR not matching."), nil, nil
 	}
 
@@ -284,17 +288,21 @@ func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds, pzone string, p
 	// Append the child PreCert
 	chain = append(chain, preRCChild.Raw)
 	//log.Println("IS CHILD CERT PRECERT?: ", preRCChild.IsPrecertificate())
-	// TODO CA CERT?
-	//chain = append(chain, )
+
 	// Append Cert to log and get a SCT!
 	sct, errsct := SendPreCertToLogBackend(url, chain)
 	if errsct != nil {
 		return retConf, nil, errsct
 	}
 
-	sctbytes := []byte(sct.String())
-	// TODO Check out problem, for testing:
-	sctbytes = []byte{}
+	// Serialize SCT
+	// The SCT is serialized using TLS-encoding
+	sctbytes, marshalerr := tls.Marshal(*sct)
+	if marshalerr != nil {
+		log.Println("Error during SCT marshalling: ", marshalerr)
+		return retConf, nil, marshalerr
+	}
+
 	return *aggc, sctbytes, nil
 }
 

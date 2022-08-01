@@ -15,7 +15,7 @@ func main() {
 		log.Fatal("Not enough arguments")
 	}
 
-	// Decide to aso generate a pubkey or not
+	// Decide to also generate a pubkey or not
 	genPubkey := len(os.Args) == 4 && os.Args[3] == "--pubkey"
 
 	switch os.Args[1] {

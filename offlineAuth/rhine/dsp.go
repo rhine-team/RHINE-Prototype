@@ -2,7 +2,7 @@ package rhine
 
 import (
 	"bytes"
-	"encoding/gob"
+	//"crypto/sha256"
 	"log"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -24,6 +24,69 @@ type toSignDsp struct {
 	EpochT uint64
 }
 
+func (dsp *Dsp) Sign(priv interface{}) error {
+	data, err := dsp.Dsum.GetDSumToBytes()
+	if err != nil {
+		return err
+	}
+	data = append(data, []byte(string(dsp.EpochT))...)
+
+	dsp.Sig = RhineSig{
+		Data: data,
+	}
+
+	err = dsp.Sig.Sign(priv)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, alC AuthorityLevel) bool {
+
+	// Serialize DSP
+	data, err := dsp.Dsum.GetDSumToBytes()
+	if err != nil {
+		log.Println("Failed converting DSum to bytes")
+		return false
+	}
+	data = append(data, []byte(string(dsp.EpochT))...)
+
+	// Verify dsp signature
+	newSig := RhineSig{
+		Data:      data,
+		Signature: dsp.Sig.Signature,
+	}
+	veri := newSig.Verify(pub)
+	if !veri {
+		log.Printf("The signature did not verify for the DSP: %+v", dsp)
+		return false
+	}
+
+	// Verify inclusion / exclusion using Merkle Proof
+	veriProof, err := (&dsp.Proof).VerifyMPathProof(dsp.Dsum.Dacc.Roothash, zname)
+	if !veriProof || err != nil {
+		log.Print("The Proof for DSP did not verify: %+v", dsp)
+		return false
+	}
+
+	// Check if certificate in DSP matches PCert
+	// TODO: ENABLE
+	if false && bytes.Compare(dsp.Dsum.Cert, ExtractTbsRCAndHash(rcertp, false)) != 0 {
+		log.Println("Cert in DSP does not match PCert")
+		return false
+	}
+
+	// Check legal delegation
+	if !CheckLegalDelegationAuthority(dsp.Dsum.Alv, alC) {
+		return false
+	}
+
+	return true
+}
+
+/*
 func (dsp *Dsp) Sign(priv interface{}) error {
 
 	// TODO Change Away from GOB
@@ -79,3 +142,4 @@ func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, 
 	// TODO more checks (time)
 	return true
 }
+*/

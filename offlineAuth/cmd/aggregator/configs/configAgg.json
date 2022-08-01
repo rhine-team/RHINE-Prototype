@@ -5,7 +5,7 @@
     "RootCertsPath" : "data/roots/",
     
     "LogsName" :       ["localhost:50016"],
-	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_pub.pem"],
+	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
 	
 	"AggregatorName" :  ["localhost:50050"],
 	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
