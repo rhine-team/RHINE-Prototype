@@ -1460,7 +1460,7 @@ func (r *Resolver) clearAdditional(req, resp *dns.Msg, extra ...bool) *dns.Msg {
 		rrs := resp.Extra
 		resp.Extra = []dns.RR{}
 		for _, e := range rrs {
-			if e.Header().Rrtype == dns.TypeDNSKEY || e.Header().Rrtype == dns.TypeOPT || e.Header().Rrtype == dns.TypeTXT {
+			if e.Header().Rrtype == dns.TypeDNSKEY || e.Header().Rrtype == dns.TypeOPT || e.Header().Rrtype == dns.TypeTXT || e.Header().Rrtype == dns.TypeRRSIG {
 				resp.Extra = append(resp.Extra, e)
 			}
 		}

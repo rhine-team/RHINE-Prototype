@@ -1,5 +1,7 @@
 module github.com/semihalev/sdns
 
+replace github.com/miekg/dns v1.1.34 => github.com/loujie1/dns v1.1.51
+
 require (
 	github.com/BurntSushi/toml v1.0.0
 	github.com/cespare/xxhash/v2 v2.1.2
