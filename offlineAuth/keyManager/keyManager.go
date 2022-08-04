@@ -13,7 +13,7 @@ import (
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
 )
 
-// These functions are from the old offlineAuth version
+// The first three functions are modified from the old offlineAuth version
 
 func CreateRSAKey(path string, pubkey bool) error {
 	PrivateKey, err := rsa.GenerateKey(rand.Reader, 2048)

@@ -5,14 +5,14 @@
     "RootCertsPath" : "data/roots/",
     
     "LogsName" :       ["localhost:50016"],
-	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
-	
-	"AggregatorName" :  ["localhost:50050"],
-	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
-	
-	"CAName" : "localhost:10000",
-	"CAServerAddr" : "localhost:10000",
-	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
-	
-	"KeyValueDBDirectory" : "data/badger_database"
+    "LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050"],
+    "AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
+    
+    "CAName" : "localhost:10000",
+    "CAServerAddr" : "localhost:10000",
+    "CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
+    
+    "KeyValueDBDirectory" : "data/badger_database"
 }
