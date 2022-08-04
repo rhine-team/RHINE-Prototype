@@ -4,10 +4,10 @@ import (
 	"crypto/ed25519"
 	"crypto/x509"
 	"encoding/base64"
-	"fmt"
 	"github.com/miekg/dns"
 	"github.com/semihalev/log"
 	"hash/fnv"
+	"os"
 	"strings"
 	"time"
 )
@@ -16,19 +16,17 @@ const (
 	// TODO for rootzone
 	DNSrhineCertPrefix = "_rhinecert."
 	DNSdspprefix       = "_dsp."
-
 	txtrhinecertprefix = "rhineCert Ed25519"
-	txtsigvalueprefix  = "rhineSig "
 
 	_RO               = 1 << 14 // RHINE OK
 	defaultUDPBufSize = 2048
 )
 
-type Delegation struct {
+type ROA struct {
 	rcert  *dns.TXT
 	dsp    *dns.TXT
 	dnskey *dns.DNSKEY
-	keySig *dns.TXT
+	keySig *dns.RRSIG
 }
 
 // Ro returns the value of the DO (DNSSEC OK) bit.
@@ -81,20 +79,30 @@ func isDelegated(dsp *dns.TXT, origin string, qname string) bool {
 	return false
 }
 
-func verifyRhineDelegation(deleg *Delegation) bool {
-	_, publiKey, err := ParseVerifyRhineCertTxtEntry(deleg.rcert)
+func verifyRhineROA(roa *ROA, certFile string) bool {
+	_, publiKey, err := ParseVerifyRhineCertTxtEntry(roa.rcert, certFile)
 	if err != nil {
 		log.Warn(err.Error())
 		return false
 	}
 	log.Debug("RCert successfully parsed")
 	// TODO add more key type
-	ok := verifyRhineSig(publiKey, []dns.RR{deleg.dnskey}, deleg.keySig)
+	sig := roa.keySig
+	key := roa.dnskey
+	var expired string
+	if !sig.ValidityPeriod(time.Now().UTC()) {
+		expired = "(*EXPIRED*)"
+	}
+	if err := sig.VerifyWithPublicKey(publiKey, []dns.RR{key}); err != nil {
+		log.Warn("[RHINE] ;- Bogus signature, %s does not validate (RCert) [%s] %s\n",
+			shortSig(sig), err.Error(), expired)
+		return false
+	}
 
-	return ok
+	return true
 }
 
-func ParseVerifyRhineCertTxtEntry(txt *dns.TXT) (*x509.Certificate, ed25519.PublicKey, error) {
+func ParseVerifyRhineCertTxtEntry(txt *dns.TXT, certFile string) (*x509.Certificate, ed25519.PublicKey, error) {
 	//TODO support other key types
 	entries := txt.Txt
 	entry := strings.Join(entries, " ")
@@ -106,53 +114,35 @@ func ParseVerifyRhineCertTxtEntry(txt *dns.TXT) (*x509.Certificate, ed25519.Publ
 
 	cert, err := x509.ParseCertificate(certdecoded)
 	if err != nil {
-		fmt.Println("Parsing Rhine Cert failed! ", err)
+		log.Warn("Parsing Rhine Cert failed! ", err)
 		return nil, nil, err
 	}
 
 	// TODO(lou): Enable Cert verification later
-	//name := txt.Header().Name
-	//apexname := strings.SplitAfter(name, DNSrhineCertPrefix)[1]
-	//var CaCertPool *x509.CertPool
-	//CaCertPool, _ = x509.SystemCertPool()
-	//
-	//CaCertPool.AppendCertsFromPEM([]byte("-----BEGIN CERTIFICATE-----\nMIIBJjCB2aADAgECAgEBMAUGAytlcDAbMRkwFwYDVQQDExBSSElORSBFWEFNUExF\nIENBMB4XDTIyMDIyMTA5MDI1NVoXDTIzMDIxMjA5MDI1NVowGzEZMBcGA1UEAxMQ\nUkhJTkUgRVhBTVBMRSBDQTAqMAUGAytlcAMhAFq9YoSG/zv2npflvTwmog9Ymijs\nK0NDTDYFgTbGxyrto0IwQDAOBgNVHQ8BAf8EBAMCAoQwDwYDVR0TAQH/BAUwAwEB\n/zAdBgNVHQ4EFgQUXcJH29E2egUuSdhJFoy/kJQDlcwwBQYDK2VwA0EAxB2JHVh+\nN7o3RTBCp7wOWDlGePd0xuhRhU4GEJs4CTxGgLbcyX1iIzF7kJ1qCmp+y180PAJe\nxqM22eY3hKQFAQ==\n-----END CERTIFICATE-----"))
-	//
-	//if _, err := cert.Verify(x509.VerifyOptions{
-	//	DNSName: apexname,
-	//	Roots:   CaCertPool,
-	//}); err != nil {
-	//	fmt.Println("Rhine Cert Verification Failed!", err)
-	//	return nil, nil, err
-	//}
+	name := txt.Header().Name
+	apexname := strings.SplitAfter(name, DNSrhineCertPrefix)[1]
+	var CaCertPool *x509.CertPool
+	CaCertPool, _ = x509.SystemCertPool()
+
+	CaCert, err := os.ReadFile(certFile)
+	CaCertPool.AppendCertsFromPEM(CaCert)
+
+	if _, err := cert.Verify(x509.VerifyOptions{
+		DNSName: apexname,
+		Roots:   CaCertPool,
+	}); err != nil {
+		log.Warn("Rhine Cert Verification Failed!", err)
+		return nil, nil, err
+	}
 
 	return cert, cert.PublicKey.(ed25519.PublicKey), nil
 }
 
-func verifyRhineSig(pkey ed25519.PublicKey, rrs []dns.RR, sig *dns.TXT) bool {
-	messagestring := ""
-	for _, rr := range rrs {
-		messagestring += rr.String()
-	}
-	message := []byte(messagestring)
-
-	entries := sig.Txt
-	entry := strings.Join(entries, " ")
-	sigstringchunks := strings.SplitAfter(entry, txtsigvalueprefix+dns.TypeToString[(rrs[0].Header().Rrtype)])[1:]
-	encodedsig := strings.Join(sigstringchunks, "")
-	encodedsig = strings.ReplaceAll(encodedsig, " ", "")
-
-	sigdecoded, _ := base64.StdEncoding.DecodeString(encodedsig)
-
-	return ed25519.Verify(pkey, message, sigdecoded)
-
-}
-
-func extractDelegationFromMsg(msg *dns.Msg) (delegation *Delegation, domain string, ok bool) {
+func extractROAFromMsg(msg *dns.Msg) (roa *ROA, domain string, ok bool) {
 	var (
 		rcert  *dns.TXT
 		dnskey *dns.DNSKEY
-		keySig *dns.TXT
+		keySig *dns.RRSIG
 		dsp    *dns.TXT
 	)
 	extra := msg.Extra
@@ -166,10 +156,13 @@ func extractDelegationFromMsg(msg *dns.Msg) (delegation *Delegation, domain stri
 				rcert = txt
 			} else if IsDSP(txt) {
 				dsp = txt
-			} else if IsRhineSig(txt) {
-				keySig = txt
 			} else {
 				extra = append(extra, r)
+			}
+		case dns.TypeRRSIG:
+			rrsig := r.(*dns.RRSIG)
+			if rrsig.TypeCovered == dns.TypeDNSKEY {
+				keySig = rrsig
 			}
 		default:
 			extra = append(extra, r)
@@ -186,13 +179,14 @@ func extractDelegationFromMsg(msg *dns.Msg) (delegation *Delegation, domain stri
 	//	domain = "."
 	//}
 
-	return &Delegation{keySig: keySig, rcert: rcert, dnskey: dnskey, dsp: dsp}, domain, true
+	return &ROA{keySig: keySig, rcert: rcert, dnskey: dnskey, dsp: dsp}, domain, true
 }
 
-func addDelegationToMsg(delegation *Delegation, msg *dns.Msg) {
-	msg.Extra = append(msg.Extra, delegation.dnskey)
-	msg.Extra = append(msg.Extra, delegation.rcert)
-	msg.Extra = append(msg.Extra, delegation.keySig)
+func addROAToMsg(roa *ROA, msg *dns.Msg) {
+	msg.Extra = append(msg.Extra, roa.dnskey)
+	msg.Extra = append(msg.Extra, roa.rcert)
+	msg.Extra = append(msg.Extra, roa.keySig)
+	msg.Extra = append(msg.Extra, roa.dsp)
 }
 func IsRCert(txt *dns.TXT) bool {
 	return strings.HasPrefix(txt.Header().Name, DNSrhineCertPrefix)
@@ -200,12 +194,6 @@ func IsRCert(txt *dns.TXT) bool {
 
 func IsDSP(txt *dns.TXT) bool {
 	return strings.HasPrefix(txt.Header().Name, DNSdspprefix)
-}
-
-func IsRhineSig(txt *dns.TXT) bool {
-	entries := txt.Txt
-	entry := strings.Join(entries, " ")
-	return strings.HasPrefix(entry, txtsigvalueprefix)
 }
 
 func rhineRRSigCheck(in *dns.Msg, key *dns.DNSKEY) bool {
@@ -219,10 +207,6 @@ func rhineRRSigCheck(in *dns.Msg, key *dns.DNSKEY) bool {
 	}
 	log.Debug("[RHINE] Start checking RRSIG in Ns section\n")
 	if !sectionCheck(in.Ns, key) {
-		return false
-	}
-	log.Debug("[RHINE] Start checking RRSIG in Extra section\n")
-	if !sectionCheck(in.Extra, key) {
 		return false
 	}
 	return true

@@ -19,43 +19,43 @@ const configver = "1.2.0"
 
 // Config type
 type Config struct {
-	Version          string
-	BlockLists       []string
-	BlockListDir     string
-	RootServers      []string
-	Root6Servers     []string
-	RootKeys         []string
-	FallbackServers  []string
-	ForwarderServers []string
-	AccessList       []string
-	LogLevel         string
-	AccessLog        string
-	Bind             string
-	BindTLS          string
-	BindDOH          string
-	TLSCertificate   string
-	TLSPrivateKey    string
-	API              string
-	Nullroute        string
-	Nullroutev6      string
-	Hostsfile        string
-	OutboundIPs      []string
-	OutboundIP6s     []string
-	Timeout          Duration
-	Expire           uint32
-	CacheSize        int
-	Maxdepth         int
-	RateLimit        int
-	ClientRateLimit  int
-	CookieSecret     string
-	NSID             string
-	Blocklist        []string
-	Whitelist        []string
-	Chaos            bool
-	QnameMinLevel    int `toml:"qname_min_level"`
-	EmptyZones       []string
-
-	Plugins map[string]Plugin
+	Version           string
+	BlockLists        []string
+	BlockListDir      string
+	RootServers       []string
+	Root6Servers      []string
+	RootKeys          []string
+	FallbackServers   []string
+	ForwarderServers  []string
+	AccessList        []string
+	LogLevel          string
+	AccessLog         string
+	Bind              string
+	BindTLS           string
+	BindDOH           string
+	TLSCertificate    string
+	TLSPrivateKey     string
+	API               string
+	Nullroute         string
+	Nullroutev6       string
+	Hostsfile         string
+	OutboundIPs       []string
+	OutboundIP6s      []string
+	Timeout           Duration
+	Expire            uint32
+	CacheSize         int
+	Maxdepth          int
+	RateLimit         int
+	ClientRateLimit   int
+	CookieSecret      string
+	NSID              string
+	Blocklist         []string
+	Whitelist         []string
+	Chaos             bool
+	QnameMinLevel     int `toml:"qname_min_level"`
+	EmptyZones        []string
+	CACertificateFile string
+	Plugins           map[string]Plugin
 
 	sVersion string
 }
@@ -221,6 +221,8 @@ qname_min_level = 5
 #	"10.in-addr.arpa."
 # ]
 emptyzones = []
+
+cacertificatefile = "./testdata/certificate/CACert.pem"
 
 # You can add your own plugins to sdns. The plugin order is very important. 
 # Plugins can be load before cache middleware.

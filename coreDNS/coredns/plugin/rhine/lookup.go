@@ -436,22 +436,28 @@ func (z *Zone) additionalProcessing(answer []dns.RR, do bool) (extra []dns.RR) {
 
 func (z *Zone) rhineDelegationProcessing(rrs []dns.RR) []dns.RR {
 	tr := z.Tree
-	if rcert, ok := tr.Search("_rhinecert." + z.origin); ok {
+	apex := z.origin
+	if z.origin == "." {
+		apex = ""
+	}
+	if rcert, ok := tr.Search("_rhinecert." + apex); ok {
 		Rcert := rcert.Type(dns.TypeTXT)
 		rrs = append(rrs, Rcert...)
 	}
-	if rSig, ok := tr.Search("_dsp." + z.origin); ok {
+	if rSig, ok := tr.Search("_dsp." + apex); ok {
 		RhineSig := rSig.Type(dns.TypeTXT)
 		rrs = append(rrs, RhineSig...)
 	}
-	// TODO(lou) give RhineSig a special name such that it can be explicitly added?
 	if zoneAuth, ok := tr.Search(z.origin); ok {
-		rrs = append(rrs, zoneAuth.Type(dns.TypeTXT)...)
 		rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
+
+		sigs := zoneAuth.Type(dns.TypeRRSIG)
+		sig := rrutil.SubTypeSignature(sigs, dns.TypeDNSKEY)
+		rrs = append(rrs, sig...)
 	}
-	//if rSig, ok := tr.Search("_rhineSig." + z.origin); ok {
-	//	RhineSig := rSig.Type(dns.TypeTXT)
-	//	rrs = append(rrs, RhineSig...)
+	//if _dnskey, ok := tr.Search("_rhinezsk." + z.origin); ok {
+	//	dnskey := _dnskey.Type(dns.TypeDNSKEY)
+	//	rrs = append(rrs, dnskey...)
 	//}
 
 	return rrs

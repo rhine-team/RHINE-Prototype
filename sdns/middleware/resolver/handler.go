@@ -17,9 +17,9 @@ import (
 
 // DNSHandler type
 type DNSHandler struct {
-	resolver   *Resolver
-	delegCache *cache.Cache
-	cfg        *config.Config
+	resolver *Resolver
+	roaCache *cache.Cache
+	cfg      *config.Config
 }
 
 type ctxKey string
@@ -41,9 +41,9 @@ func New(cfg *config.Config) *DNSHandler {
 	}
 
 	return &DNSHandler{
-		resolver:   NewResolver(cfg),
-		delegCache: cache.New(defaultCacheSize),
-		cfg:        cfg,
+		resolver: NewResolver(cfg),
+		roaCache: cache.New(defaultCacheSize),
+		cfg:      cfg,
 	}
 }
 
@@ -104,7 +104,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 	if q.Name != rootzone && !req.RecursionDesired {
 		return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 	}
-	delegKey, ro := h.FindDelegInCache(req.Question[0].Name)
+	roaKey, ro := h.FindROAInCache(req.Question[0].Name)
 	if ro {
 		setRo(req)
 	}
@@ -139,34 +139,34 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 	case response.NoError, response.Delegation, response.NoData:
 		var dnskey *dns.DNSKEY
 		if !ro {
-			deleg, ok := h.delegCache.Get(delegKey)
+			roa, ok := h.roaCache.Get(roaKey)
 			if !ok {
-				log.Info("Delegation cache not working right for key: %s", delegKey)
+				log.Info("ROA cache not working right for key: %s", roaKey)
 				// TODO(lou): Comment this failure message due to intention of not affecting normal resolution process without rhine enabled
 				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 			}
-			delegation, ok := deleg.(*Delegation)
+			ROA, ok := roa.(*ROA)
 			if !ok {
-				log.Info("Delegation cache contains non-Delegation object for key: %s", delegKey)
+				log.Info("ROA cache contains non-ROA object for key: %s", roaKey)
 				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 			} else {
-				log.Info("Got delegation from cache")
-				dnskey = delegation.dnskey
-				addDelegationToMsg(delegation, resp)
+				log.Info("Got ROA from cache")
+				dnskey = ROA.dnskey
+				addROAToMsg(ROA, resp)
 			}
 		} else {
-			if deleg, domain, ok := extractDelegationFromMsg(resp); !ok {
-				log.Info("The response doesn't contain correct delegation!")
+			if roa, domain, ok := extractROAFromMsg(resp); !ok {
+				log.Info("The response doesn't contain correct ROA!")
 				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 			} else {
-				log.Info("The delegation successfully extracted")
-				if !verifyRhineDelegation(deleg) {
-					log.Info("The delegation verify failed!")
+				log.Info("The ROA successfully extracted")
+				if !verifyRhineROA(roa, h.cfg.CACertificateFile) {
+					log.Info("The ROA verify failed!")
 					//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 				}
-				log.Info("The delegation verified")
-				h.delegCache.Add(hash(dns.Fqdn(domain)), deleg)
-				dnskey = deleg.dnskey
+				log.Info("The ROA verified")
+				h.roaCache.Add(hash(dns.Fqdn(domain)), roa)
+				dnskey = roa.dnskey
 			}
 		}
 		if !rhineRRSigCheck(resp, dnskey) {
@@ -178,11 +178,11 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 	return resp
 }
 
-func (h *DNSHandler) FindDelegInCache(qname string) (key uint64, ro bool) {
+func (h *DNSHandler) FindROAInCache(qname string) (key uint64, ro bool) {
 	qname = dns.Fqdn(qname)
 	k := hash(qname)
 	// TODO(lou): add checkExist() function for fast lookup instead of using Get() which acquires Rlock that leads to performance loss
-	if _, ok := h.delegCache.Get(k); ok {
+	if _, ok := h.roaCache.Get(k); ok {
 		return k, false
 	} else {
 		// Start searching in the cache for parent domain of queried domain
@@ -195,26 +195,26 @@ func (h *DNSHandler) FindDelegInCache(qname string) (key uint64, ro bool) {
 			}
 			parent := qname[off:]
 			k = hash(parent)
-			if i, ok := h.delegCache.Get(k); ok {
-				if delegation, ok := i.(*Delegation); ok {
+			if i, ok := h.roaCache.Get(k); ok {
+				if delegation, ok := i.(*ROA); ok {
 					if !isDelegated(delegation.dsp, parent, qname) {
 						return k, false
 					}
 				} else {
-					log.Info("The delegation cache should only contain Delegation! Wrong record: %s", parent)
+					log.Info("The delegation cache should only contain ROA! Wrong record: %s", parent)
 				}
 				return 0, true
 			}
 		}
 		// check rootzone
 		k = hash(rootzone)
-		if i, ok := h.delegCache.Get(k); ok {
-			if delegation, ok := i.(*Delegation); ok {
+		if i, ok := h.roaCache.Get(k); ok {
+			if delegation, ok := i.(*ROA); ok {
 				if !isDelegated(delegation.dsp, "", qname) {
 					return k, false
 				}
 			} else {
-				log.Warn("The delegation cache should only contain Delegation! Wrong record: %s", rootzone)
+				log.Warn("The delegation cache should only contain ROA! Wrong record: %s", rootzone)
 			}
 		}
 
