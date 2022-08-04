@@ -1,4 +1,4 @@
-module github.com/loujie1/exdns/q
+module github.com/loujie1/rdig
 
 go 1.18
 
