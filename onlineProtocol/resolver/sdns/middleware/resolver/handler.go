@@ -136,7 +136,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 	mt, _ := response.Typify(resp, utc)
 
 	switch mt {
-	case response.NoError, response.Delegation, response.NoData:
+	case response.NoError:
 		var dnskey *dns.DNSKEY
 		if !ro {
 			roa, ok := h.roaCache.Get(roaKey)
