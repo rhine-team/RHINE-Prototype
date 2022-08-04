@@ -85,7 +85,7 @@ func (rh Rhine) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) 
 	}
 	ro := state.Ro()
 	answer, ns, extra, result := z.Lookup(ctx, state, qname)
-	if ro && (result == Success || result == NoData) {
+	if ro && (result == Success) {
 		extra = z.rhineDelegationProcessing(extra)
 	}
 

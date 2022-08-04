@@ -333,15 +333,17 @@ func main() {
 				shortenMsg(r)
 			}
 			if *rhine {
-				fmt.Printf("[RHINE] Checking rhine consistency\n")
-				if roa, _, ok := extractROAFromMsg(r); ok {
-					if !verifyRhineROA(roa, cert) {
-						fmt.Printf("The ROA verify failed!")
-					} else {
-						dnskey = roa.dnskey
+				if len(r.Answer) > 0 && r.Rcode == dns.RcodeSuccess {
+					fmt.Printf("[RHINE] Checking rhine consistency\n")
+					if roa, _, ok := extractROAFromMsg(r); ok {
+						if !verifyRhineROA(roa, cert) {
+							fmt.Printf("The ROA verify failed!")
+						} else {
+							dnskey = roa.dnskey
+						}
 					}
+					rhineRRSigCheck(r, dnskey)
 				}
-				rhineRRSigCheck(r, dnskey)
 			}
 
 			fmt.Printf("%v", r)
@@ -444,17 +446,19 @@ Query:
 			shortenMsg(r)
 		}
 		if *rhine {
-			fmt.Printf("[RHINE] Checking rhine consistency\n")
-			roa, _, ok := extractROAFromMsg(r)
-			if !ok {
-				fmt.Printf("[RHINE] The response doesn't contain correct ROA!\n")
-			} else {
-				if !verifyRhineROA(roa, cert) {
-					fmt.Printf("[RHINE] The ROA verify failed!\n")
+			if len(r.Answer) > 0 && r.Rcode == dns.RcodeSuccess {
+				fmt.Printf("[RHINE] Checking rhine consistency\n")
+				roa, _, ok := extractROAFromMsg(r)
+				if !ok {
+					fmt.Printf("[RHINE] The response doesn't contain correct ROA!\n")
+				} else {
+					if !verifyRhineROA(roa, cert) {
+						fmt.Printf("[RHINE] The ROA verify failed!\n")
+					}
+					dnskey = roa.dnskey
 				}
-				dnskey = roa.dnskey
+				rhineRRSigCheck(r, dnskey)
 			}
-			rhineRRSigCheck(r, dnskey)
 		}
 		fmt.Printf("%v", r)
 		fmt.Printf("\n;; query time: %.3d µs, server: %s(%s), size: %d bytes\n", rtt/1e3, nameserver, c.Net, r.Len())
