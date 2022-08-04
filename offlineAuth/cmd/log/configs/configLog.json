@@ -15,5 +15,7 @@
 	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
 	
 	"CTAddress": "localhost:6966",
-	"CTPrefix": "RHINE"
+	"CTPrefix": "RHINE",
+	
+	"KeyValueDBDirectory" : "data/badger_database"
 }

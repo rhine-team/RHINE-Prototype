@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"crypto/sha256"
 
-	//"encoding/gob"
 	"errors"
 	"log"
 	"reflect"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
-	//"github.com/google/certificate-transparency-go/x509util"
 )
 
 type Nds struct {
@@ -176,11 +174,16 @@ func BytesToNds(byt []byte) (*Nds, error) {
 	return &nds, nil
 }
 
+// Any certificates this function is called with needs to be poisoned
+// if removeSCT is set to TRUE, the SCT list will be removed from the certificate
 func ExtractTbsRCAndHash(cert *x509.Certificate, removeSCT bool) []byte {
 	hasher := sha256.New()
 
 	// Remove CT Poison
-	tbsbytes, _ := x509.RemoveCTPoison(cert.RawTBSCertificate)
+	tbsbytes := cert.RawTBSCertificate
+	if cert.IsPrecertificate() {
+		tbsbytes, _ = x509.RemoveCTPoison(tbsbytes)
+	}
 
 	if removeSCT {
 		// At least one SCTList has to be present

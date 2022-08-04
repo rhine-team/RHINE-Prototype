@@ -6,17 +6,13 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
-	//"crypto/sha256"
-
-	//"crypto/x509"
 	"encoding/json"
-	//"errors"
+
 	"fmt"
 	"io/ioutil"
 	"log"
 	"math/big"
 
-	//"strings"
 	"time"
 
 	"github.com/google/certificate-transparency-go/asn1"
@@ -217,13 +213,6 @@ func (myca *Ca) CreateNDS(psr *Psr, certC *x509.Certificate) (*Nds, error) {
 
 	// Extract list of designated loggers
 	logl := psr.csr.logs
-
-	/*
-		aggl := make([]Agg, 0, len(myca.AggMap))
-		for _, v := range myca.AggMap {
-			aggl = append(aggl, v)
-		}
-	*/
 
 	// TODO Randomly select aggregs instead of all
 	aggl := myca.AggList

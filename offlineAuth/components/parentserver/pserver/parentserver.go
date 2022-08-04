@@ -7,7 +7,6 @@ import (
 	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
 	ps "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/parentserver"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
-	//"google.golang.org/grpc"
 )
 
 type PServer struct {

@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	//"encoding/hex"
+
 	"bytes"
 	"log"
 	"net"
 
-	//cx509 "crypto/x509"
 	"time"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -17,11 +16,9 @@ import (
 	ps "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/parentserver"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/components/parentserver/pserver"
 
-	//"github.com/grantae/certinfo"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
 	"github.com/spf13/cobra"
 
-	//"github.com/spf13/viper"
 	"google.golang.org/grpc"
 )
 

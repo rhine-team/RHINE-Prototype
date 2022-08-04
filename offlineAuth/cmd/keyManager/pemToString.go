@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 
-	//"github.com/rhine-team/RHINE-Prototype/offlineAuth/keyManager"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
 )
 

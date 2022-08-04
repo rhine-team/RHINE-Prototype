@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"errors"
 
-	//"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
 	"io/ioutil"
@@ -15,7 +14,7 @@ import (
 	"github.com/google/certificate-transparency-go/x509"
 )
 
-// zone manager manages zone, can act as parent or child zone
+// Zone manager manages zone, can act as parent or child zone
 
 type ZoneManager struct {
 	zone    ZoneOwner
@@ -219,23 +218,8 @@ func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
 
 	//log.Printf("CSR when verifying child csr %+v", csr)
 
-	//TODO check if delegation legal??
-
 	return csr, nil
 }
-
-/*
-func (zm *ZoneManager) GenerateACSR(rawcsr []byte) (*RhineSig, error) {
-	res := RhineSig{
-		Data: rawcsr,
-	}
-	if err := res.Sign(zm.privkey); err != nil {
-		return nil, err
-	}
-
-	return &res, nil
-}
-*/
 
 func (zm *ZoneManager) CreatePSR(csr *Csr) *Psr {
 	psr := Psr{

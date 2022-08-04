@@ -7,7 +7,7 @@ This directory contains a prototype implementation of the RHINE offline autentic
 
 The RHINE offline authentication protocol makes use of four components: Aggregators, Loggers, a Certificate Authority and a Zone Manager. The latter provides functionality to zones to request a delegation as well as for parents to run a parent server allowing its children to be delegated to. 
 Loggers log certificates by using Google's Certificate Transperancy as a backend, they also serve data related to RHINE's Delegation Transperancy, for which the Aggregators are responsible for. 
-gRpc is used to connect all running components and data is marshalled using CBOR. 
+gRPC is used to connect all running components and data is marshalled for the gRPC calls using CBOR. 
 
 
 ## How to conduct a test run
@@ -83,16 +83,16 @@ For that, we need to provide a configuration file which has the following format
 
 ```
 config {
-	log_id: [CREATED TREE ID]
-	prefix: "RHINE"
-	roots_pem_file: [PATH TO CA CERTIFICATE]
-	private_key: {
+    log_id: [CREATED TREE ID]
+    prefix: "RHINE"
+    roots_pem_file: [PATH TO CA CERTIFICATE]
+    private_key: {
         [type.googleapis.com/keyspb.PrivateKey] {
             der: "[DER HEX STRING]"
         }
     }
-	max_merge_delay_sec: 86400
-	expected_merge_delay_sec: 120
+    max_merge_delay_sec: 86400
+    expected_merge_delay_sec: 120
 }
 
 ```
@@ -105,6 +105,49 @@ go run main.go --log_config=[CTConfigPath] --log_rpc_server=127.0.0.1:8090 --htt
 
 Verify that it is working by visiting [http://localhost:6966/RHINE/ct/v1/get-sth](http://localhost:6966/RHINE/ct/v1/get-sth), which should provide the signed hash for our created tree.
 
+### Setup and start the Aggregator
+An example config for the aggregator can be found below and at "cmd/aggregator/configs". "KeyValueDBDirectory" indicates the path where the data base storing our Delegation Transperancy will be located. The Aggregator will initialize it on its own.
+```json
+{
+    "PrivateKeyAlgorithm": "Ed25519",
+    "PrivateKeyPath": "data/Agg1.pem",
+    "ServerAddress" : "localhost:50050",
+    "RootCertsPath" : "data/roots/",
+    
+      "LogsName" :       ["localhost:50016"],
+    "LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050"],
+    "AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
+    
+    "CAName" : "localhost:10000",
+    "CAServerAddr" : "localhost:10000",
+    "CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
+    
+    "KeyValueDBDirectory" : "data/badger_database"
+}
+
+```
+
+Note that we need some existing DT data structures for our test run, else the components will not accept our new delegation. Create these the following way:
+```bash
+# From the offlineAuth directory
+cd cmd/aggregator
+go run run_Aggregator.go AddTestDT --config=[PathToConfigFile] --parent=[ExampleParentZone] --certPath=[PathToTheParentsCertificate]
+
+```
+
+It is important that the --parent flag matches the name that was used when creating the parent certificate in the first step, so for example: ethz.ch
+Now we can run our aggregator:
+
+
+```bash
+# From the offlineAuth directory
+cd cmd/aggregator
+go run run_Aggregator.go --config=[PathToConfigFile]
+
+```
+
 ### Setup and start the Logger
 To start the Logger, we provide a configuration file with the following format. Fill in the needed values if not using example key data. An example of a config can also be found under "cmd/log/configs". 
 
@@ -116,22 +159,25 @@ To start the Logger, we provide a configuration file with the following format. 
     "RootCertsPath" : "data/roots/",
     
     "LogsName" :       ["localhost:50016"],
-	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
-	
-	"AggregatorName" :  ["localhost:50050"],
-	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
-	
-	"CAName" : "localhost:10000",
-	"CAServerAddr" : "localhost:10000",
-	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
-	
-	"CTAddress": "localhost:6966",
-	"CTPrefix": "RHINE"
+    "LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050"],
+    "AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
+    
+    "CAName" : "localhost:10000",
+   	"CAServerAddr" : "localhost:10000",
+    "CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
+    
+    "CTAddress": "localhost:6966",
+    "CTPrefix": "RHINE",
+    
+    "KeyValueDBDirectory" : "data/badger_database"
 }
 
 ```
 
-To run the logger:
+Important: The logger needs to be run AFTER the aggregator, as it will request some information from it at start-up. To run the logger:
+
 ```bash
 # From the offlineAuth directory
 cd cmd/log
@@ -150,11 +196,11 @@ To run our CA we provide a configuration file that provides information regardin
     "ServerAddress" : "localhost:10000",
     "RootCertsPath" : "data/roots/",
     
-    	"LogsName" :       ["localhost:50016"],
-	"LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
-	
-	"AggregatorName" :  ["localhost:50050"],
-	"AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"]
+    "LogsName" :       ["localhost:50016"],
+    "LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050"],
+    "AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"]
 }
 ```
 If not using the example data, key paths, aggregator addresses and public keys, etc. need to be set correctly with the previously generated keying material. Note that for this and our other components, the directory described by RootCertsPath, should contain our CA's certificate, indicating that we trust it as a signing authority. To run the CA:
@@ -165,14 +211,6 @@ go run run_CA.go --config=[PathToConfigFile]
 
 ```
 
-### Setup and start the Aggregator
-An example config for the aggregator can be found at "cmd/aggregator/configs", run it with:
-```bash
-# From the offlineAuth directory
-cd cmd/aggregator
-go run run_Aggregator.go --config=[PathToConfigFile]
-
-```
 
 ### Setup and start the parent server
 The parent server is needed to approve of the initial delegation. Again, a configuration file can be found at "cmd/zoneManager/configs".
@@ -201,3 +239,16 @@ go run run_zoneManager.go RequestDeleg --config=[PathToConfigFile] --zone=[ZoneN
 Other flags can be used to for example provide the parent server address, if not specified in the config file. The zone flag should be set to the child zone name, for example: --zone=example.ethz.ch
 
 You should see a string representation of the received certificate in the terminal and a stored pem encoded certficated in the file system as result from the initial delegation.
+
+### Clearing the DT data bases
+If you want to run the toy example again. The new delegation needs to be cleared from the data bases in the aggregator and logger. Do this following way:
+
+```bash
+# From the offlineAuth directory
+cd cmd/log
+go run run_Log.go WipeDB --config=[PathToConfigFile]
+cd ../aggregator
+go run run_Aggregator.go WipeDB --config=[PathToConfigFile]
+
+```
+

@@ -4,7 +4,7 @@ package rhinelog;
 
 option go_package = "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/log";
 
-// Service offered by the parent
+// Service offered by the log
 service LogService {
   rpc DSProofRet (DSProofRetRequest) returns (DSProofRetResponse) {}
   

@@ -22,7 +22,7 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AggServiceClient interface {
-	RetrieveDSALog(ctx context.Context, in *RetrieveDSALogRequest, opts ...grpc.CallOption) (*RetrieveDSALogResponse, error)
+	DSRetrieval(ctx context.Context, in *RetrieveDSALogRequest, opts ...grpc.CallOption) (*RetrieveDSALogResponse, error)
 	SubmitNDS(ctx context.Context, in *SubmitNDSRequest, opts ...grpc.CallOption) (*SubmitNDSResponse, error)
 }
 
@@ -34,9 +34,9 @@ func NewAggServiceClient(cc grpc.ClientConnInterface) AggServiceClient {
 	return &aggServiceClient{cc}
 }
 
-func (c *aggServiceClient) RetrieveDSALog(ctx context.Context, in *RetrieveDSALogRequest, opts ...grpc.CallOption) (*RetrieveDSALogResponse, error) {
+func (c *aggServiceClient) DSRetrieval(ctx context.Context, in *RetrieveDSALogRequest, opts ...grpc.CallOption) (*RetrieveDSALogResponse, error) {
 	out := new(RetrieveDSALogResponse)
-	err := c.cc.Invoke(ctx, "/aggregator.AggService/RetrieveDSALog", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/aggregator.AggService/DSRetrieval", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (c *aggServiceClient) SubmitNDS(ctx context.Context, in *SubmitNDSRequest, 
 // All implementations must embed UnimplementedAggServiceServer
 // for forward compatibility
 type AggServiceServer interface {
-	RetrieveDSALog(context.Context, *RetrieveDSALogRequest) (*RetrieveDSALogResponse, error)
+	DSRetrieval(context.Context, *RetrieveDSALogRequest) (*RetrieveDSALogResponse, error)
 	SubmitNDS(context.Context, *SubmitNDSRequest) (*SubmitNDSResponse, error)
 	mustEmbedUnimplementedAggServiceServer()
 }
@@ -65,8 +65,8 @@ type AggServiceServer interface {
 type UnimplementedAggServiceServer struct {
 }
 
-func (UnimplementedAggServiceServer) RetrieveDSALog(context.Context, *RetrieveDSALogRequest) (*RetrieveDSALogResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RetrieveDSALog not implemented")
+func (UnimplementedAggServiceServer) DSRetrieval(context.Context, *RetrieveDSALogRequest) (*RetrieveDSALogResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DSRetrieval not implemented")
 }
 func (UnimplementedAggServiceServer) SubmitNDS(context.Context, *SubmitNDSRequest) (*SubmitNDSResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SubmitNDS not implemented")
@@ -84,20 +84,20 @@ func RegisterAggServiceServer(s grpc.ServiceRegistrar, srv AggServiceServer) {
 	s.RegisterService(&AggService_ServiceDesc, srv)
 }
 
-func _AggService_RetrieveDSALog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _AggService_DSRetrieval_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RetrieveDSALogRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(AggServiceServer).RetrieveDSALog(ctx, in)
+		return srv.(AggServiceServer).DSRetrieval(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/aggregator.AggService/RetrieveDSALog",
+		FullMethod: "/aggregator.AggService/DSRetrieval",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AggServiceServer).RetrieveDSALog(ctx, req.(*RetrieveDSALogRequest))
+		return srv.(AggServiceServer).DSRetrieval(ctx, req.(*RetrieveDSALogRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -128,8 +128,8 @@ var AggService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AggServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "RetrieveDSALog",
-			Handler:    _AggService_RetrieveDSALog_Handler,
+			MethodName: "DSRetrieval",
+			Handler:    _AggService_DSRetrieval_Handler,
 		},
 		{
 			MethodName: "SubmitNDS",

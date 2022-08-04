@@ -9,7 +9,6 @@ import (
 	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
 	pf "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/log"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
-	//"google.golang.org/grpc"
 )
 
 type LogServer struct {

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
-	//"crypto/x509"
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509/pkix"
@@ -15,7 +14,6 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"bytes"
-	//"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/hex"
@@ -32,6 +30,8 @@ import (
 	"strings"
 	"time"
 )
+
+// Some of these functions are from the old offlineAuth implementation
 
 func PEMBytesToHexString(pemBytes []byte) string {
 	hexString := hex.EncodeToString(pemBytes)
@@ -591,7 +591,7 @@ func EqualKeys(a any, b any) bool {
 func GetGRPCConn(addr string) *grpc.ClientConn {
 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.CallContentSubtype(cbor.CBOR{}.Name())))
 	if err != nil {
-		log.Fatalf("Could not connect: %v", err)
+		log.Println("Could not connect: %v", err)
 		return nil
 	}
 	return conn

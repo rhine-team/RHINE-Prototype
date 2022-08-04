@@ -6,7 +6,7 @@ option go_package = "github.com/rhine-team/RHINE-Prototype/offlineAuth/component
 
 // Service offered by the aggregator
 service AggService {
-  rpc RetrieveDSALog (RetrieveDSALogRequest) returns (RetrieveDSALogResponse) {}
+  rpc DSRetrieval (RetrieveDSALogRequest) returns (RetrieveDSALogResponse) {}
 
   rpc SubmitNDS (SubmitNDSRequest) returns (SubmitNDSResponse) {}
 }
@@ -26,11 +26,12 @@ message Acfm {
 }
 
 message RetrieveDSALogRequest {
-	bytes DSARequest = 1;
+	repeated string RequestedZones = 1;
 }
 
 message RetrieveDSALogResponse {
-	bytes DSAPayload = 1;
+	repeated bytes DSAPayload = 1;
+	repeated bytes DSASignatures = 2;
 }
 
 

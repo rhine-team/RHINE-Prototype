@@ -12,5 +12,7 @@
 	
 	"CAName" : "localhost:10000",
 	"CAServerAddr" : "localhost:10000",
-	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem"
+	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
+	
+	"KeyValueDBDirectory" : "data/badger_database"
 }

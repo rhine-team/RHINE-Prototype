@@ -2,24 +2,16 @@ package rhine
 
 import (
 	"crypto/ed25519"
-	//"crypto/rand"
+
 	"crypto/rsa"
 
-	//"crypto/sha256"
-
-	//"crypto/x509"
 	"encoding/json"
-	//"errors"
-	//"errors"
+
 	"io/ioutil"
 	"log"
 
-	//"strings"
-
-	//ct "github.com/google/certificate-transparency-go"
-	//"github.com/google/certificate-transparency-go/asn1"
+	badger "github.com/dgraph-io/badger/v3"
 	"github.com/google/certificate-transparency-go/x509"
-	//"github.com/google/certificate-transparency-go/x509/pkix"
 )
 
 type AggManager struct {
@@ -37,6 +29,8 @@ type AggManager struct {
 	Dsalog       *DSALog
 	T            uint64
 	RequestCache map[string]RememberRequest
+
+	DB *badger.DB
 }
 
 type AggConfig struct {
@@ -54,6 +48,8 @@ type AggConfig struct {
 	CAName       string
 	CAServerAddr string
 	CAPubKeyPath string
+
+	KeyValueDBDirectory string
 }
 
 func LoadAggConfig(Path string) (AggConfig, error) {
@@ -106,6 +102,13 @@ func NewAggManager(config AggConfig) *AggManager {
 	// Load CA Pubkey
 	caPk, _ := PublicKeyFromFile(config.CAPubKeyPath)
 
+	// Open database (should be created if not existing yet)
+	db, errdb := badger.Open(badger.DefaultOptions(config.KeyValueDBDirectory))
+	if errdb != nil {
+		log.Fatal(errdb)
+	}
+	// TODO When is db.Close() called ?!
+
 	myagg := AggManager{
 		privkey: privKey,
 		PubKey:  pubkey,
@@ -119,6 +122,7 @@ func NewAggManager(config AggConfig) *AggManager {
 			Name:   config.CAName,
 			Pubkey: caPk,
 		},
+		DB: db,
 	}
 
 	files, err := ioutil.ReadDir(config.RootCertsPath)
@@ -162,19 +166,25 @@ func NewAggManager(config AggConfig) *AggManager {
 }
 
 func (a *AggManager) AcceptNDSAndStore(n *Nds) (*Confirm, error) {
-	// TODO Store NDS correctly!
-
 	// Construct a DSum out of Nds
 	dsum := n.ConstructDSum()
 
 	//log.Println("Dsum created: ", dsum)
 	log.Println("Dsum created.")
 
+	// Store new delegation
+	// Note: We leave parent arguments on zero, because they are not needed (we know a parent exists already)
+	a.Dsalog.AddDelegationStatus(GetParentZone(n.Nds.Zone.Name), 0, []byte{}, n.Nds.Exp, n.Nds.Zone.Name, n.Nds.Al, n.Nds.TbsCert, a.DB)
+
 	// Create AGG_Confirm
-	aggc, err := CreateConfirm(0, n, a.Agg.Name, dsum, a.privkey)
-	if err != nil {
-		return nil, err
+	aggc, errconf := CreateConfirm(0, n, a.Agg.Name, dsum, a.privkey)
+	if errconf != nil {
+		return nil, errconf
 	}
 
 	return aggc, nil
+}
+
+func (a *AggManager) GetPrivKey() any {
+	return a.privkey
 }

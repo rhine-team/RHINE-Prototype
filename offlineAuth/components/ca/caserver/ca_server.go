@@ -58,7 +58,7 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	dspRequest := &logp.DSProofRetRequest{Parentzone: psr.ChildZone, Childzone: psr.ParentZone}
+	dspRequest := &logp.DSProofRetRequest{Childzone: psr.ChildZone, Parentzone: psr.ParentZone}
 
 	//log.Printf("Our DSPRequest %+v", dspRequest)
 

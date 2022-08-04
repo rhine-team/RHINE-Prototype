@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
-	//"log"
 	"fmt"
 	"strings"
 

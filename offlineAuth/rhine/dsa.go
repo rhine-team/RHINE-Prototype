@@ -1,21 +1,22 @@
 package rhine
 
 import (
-	//"sort"
 	"crypto/sha256"
 	"time"
 
-	"github.com/cbergoon/merkletree"
+	"github.com/RubFischer/merkletree"
 )
 
 // Delegation Status Accumulator
 type DSA struct {
-	zone     string
-	alv      AuthorityLevel
-	exp      time.Time
-	cert     []byte
-	acc      *merkletree.MerkleTree
-	subzones []DSLeafContent
+	Zone     string
+	Alv      AuthorityLevel
+	Exp      time.Time
+	Cert     []byte
+	Acc      *merkletree.MerkleTree
+	Subzones []DSLeafContent
+
+	Signature []byte
 }
 
 type DAcc struct {
@@ -32,17 +33,17 @@ type DSum struct {
 
 func (dsa *DSA) GetDAcc() DAcc {
 	return DAcc{
-		Zone:     dsa.zone,
-		Roothash: dsa.acc.Root.Hash,
+		Zone:     dsa.Zone,
+		Roothash: dsa.Acc.Root.Hash,
 	}
 }
 
 func (dsa *DSA) GetDSum() DSum {
 	return DSum{
 		Dacc: dsa.GetDAcc(),
-		Alv:  dsa.alv,
-		Cert: dsa.cert,
-		Exp:  dsa.exp,
+		Alv:  dsa.Alv,
+		Cert: dsa.Cert,
+		Exp:  dsa.Exp,
 	}
 }
 
@@ -63,28 +64,3 @@ func (d *DSum) GetDSumToBytes() ([]byte, error) {
 
 	return hasher.Sum(nil), nil
 }
-
-/*
-func (dsa *DSA) BuildDSLeafOrdered(sliceLeafs []DSLeafZone) {
-	// We sort the leafs first
-	sort.Slice(sliceLeafs, func(a, b int) bool {
-		return sliceLeafs.zone[a] < sliceLeafs.zone[b]
-	})
-
-	// Generate the double zone leaf structure
-	res := []DSLeafContent{}
-	for i, v := range sliceLeafs {
-		var succ DSLeafZone
-
-		if i == 0 {
-			succ =
-		} else if i == len(sliceLeafs)-1 {
-
-		} else {
-
-		}
-		leafContent := DSLeafContent{}
-		res = append(res, )
-	}
-}
-*/

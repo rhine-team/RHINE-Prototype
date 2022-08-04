@@ -1,27 +1,21 @@
 package rhine
 
 import (
+	"context"
 	"crypto/ed25519"
-	//"crypto/rand"
 	"crypto/rsa"
+	"time"
 
-	//"crypto/sha256"
-
-	//"crypto/x509"
 	"encoding/json"
-	//"errors"
+
 	"errors"
 	"io/ioutil"
 	"log"
 
-	//"strings"
-
-	//ct "github.com/google/certificate-transparency-go"
-	//ctgo "github.com/google/certificate-transparency/go"
-	//"github.com/google/certificate-transparency-go/asn1"
+	badger "github.com/dgraph-io/badger/v3"
 	"github.com/google/certificate-transparency-go/tls"
 	"github.com/google/certificate-transparency-go/x509"
-	//"github.com/google/certificate-transparency-go/x509/pkix"
+	"github.com/rhine-team/RHINE-Prototype/offlineAuth/components/aggregator"
 )
 
 type LogManager struct {
@@ -42,6 +36,8 @@ type LogManager struct {
 
 	CTAddress string
 	CTPrefix  string
+
+	DB *badger.DB
 }
 
 type RememberRequest struct {
@@ -69,6 +65,8 @@ type LogConfig struct {
 
 	CTAddress string
 	CTPrefix  string
+
+	KeyValueDBDirectory string
 }
 
 func LoadLogConfig(Path string) (LogConfig, error) {
@@ -121,6 +119,13 @@ func NewLogManager(config LogConfig) *LogManager {
 	// Load CA Pubkey
 	caPk, _ := PublicKeyFromFile(config.CAPubKeyPath)
 
+	// Open database (should be created if not existing yet)
+	db, errdb := badger.Open(badger.DefaultOptions(config.KeyValueDBDirectory))
+	if errdb != nil {
+		log.Fatal(errdb)
+	}
+	// TODO When is db.Close() called ?!
+
 	mylog := LogManager{
 		privkey: privKey,
 		Log: Log{
@@ -135,6 +140,7 @@ func NewLogManager(config LogConfig) *LogManager {
 		},
 		CTAddress: config.CTAddress,
 		CTPrefix:  config.CTPrefix,
+		DB:        db,
 	}
 
 	files, err := ioutil.ReadDir(config.RootCertsPath)
@@ -182,11 +188,12 @@ func NewLogManager(config LogConfig) *LogManager {
 }
 
 func (lm *LogManager) DSProof(pzone string, czone string) (Dsp, error) {
-	dsp, err := lm.Dsalog.DSProofRet(pzone, czone, ProofOfAbsence)
+	dsp, err := lm.Dsalog.DSProofRet(pzone, czone, ProofOfAbsence, lm.DB)
 	if err != nil {
 		return Dsp{}, err
 	}
 
+	// Sign the DSProof
 	(&dsp).Sign(lm.privkey)
 
 	// TODO remove
@@ -279,9 +286,6 @@ func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds, pzone string, p
 		return retConf, nil, err
 	}
 
-	// TODO For Testing purposes only:
-	lm.Dsalog.AddDelegationStatus(pzone, AuthorityLevel(0b0001), dsum.Cert, dsum.Exp, dsum.Dacc.Zone, dsum.Alv)
-
 	// SCT!
 	url := "http://" + lm.CTAddress + "/" + lm.CTPrefix + "/ct/v1/add-pre-chain"
 	chain := [][]byte{}
@@ -303,66 +307,50 @@ func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds, pzone string, p
 		return retConf, nil, marshalerr
 	}
 
+	// TODO At a different time
+	// Retrieve DSA from aggregator!
+	lm.GetDSAfromAggregators()
+
 	return *aggc, sctbytes, nil
 }
 
-/*
-func (lm LogManager) DSProofRetOld(PZone string, CZone string, ptype MPathProofType) Dsp {
-	log := lm.logs[PZone]
+func (lm *LogManager) GetDSAfromAggregators() {
+	// Connect to the aggreg
+	conn := GetGRPCConn(lm.AggList[0])
+	log.Println("Established connection to Aggregator at: ", lm.AggList[0])
 
-	dsp := Dsp{
-		dsum:   log.GetDSum(),
-		epochT: lm.T,
-		sig:    RhineSig{},
-		proof:  MPathProof{},
+	defer conn.Close()
+	c := aggregator.NewAggServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	r, err := c.DSRetrieval(ctx, &aggregator.RetrieveDSALogRequest{RequestedZones: []string{}})
+	if err != nil {
+		log.Fatalf("No response from Aggregator: %v", err)
 	}
 
-	dsp.Sign(lm.privkey)
+	log.Println("What aggreg gave us", r.DSAPayload)
 
-	var path [][]byte
-	switch ptype {
-	case ProofOfPresence:
-		path, _, _ = lm.GetInclusionProof(PZone, CZone)
-	case ProofOfAbsence:
-		path, _, _ = lm.GetAbsenceProof(PZone, CZone)
-	}
-
-	dsp.proof = MPathProof{
-		path:  path,
-		ptype: ptype,
-	}
-
-	return dsp
-}
-
-/*
-func (lm LogManager) GetInclusionProof(zone string, label string) (merklepath [][]byte, index []int64, err error) {
-
-	log := lm.logs[zone]
-
-	for _, leaf := range log.subzones {
-		if leaf.start.zone == label || leaf.end.zone == label {
-			merklepath, index, err = log.acc.GetMerklePath(leaf)
-			if err != nil {
-				return nil, nil, err
-			}
+	// Add results to badger and to cache
+	// TODO add to cache
+	for _, bytesdsa := range r.DSAPayload {
+		// Deseri
+		dsares, errdeserial := DeserializeStructure[DSA](bytesdsa)
+		if errdeserial != nil {
+			log.Println("Could not deseri a request")
+			return
 		}
-	}
-	return nil, nil, errors.New("label not found")
-}
 
-func (lm LogManager) GetAbsenceProof(zone string, label string) (merklepath [][]byte, index []int64, err error) {
-
-	log := lm.logs[zone]
-
-	for _, leaf := range log.subzones {
-		if strings.Compare(leaf.start.zone, label) == -1 && strings.Compare(leaf.end.zone, label) == 1 {
-			merklepath, index, err = log.acc.GetMerklePath(leaf)
-			if err != nil {
-				return nil, nil, err
-			}
+		errup := lm.DB.Update(func(txn *badger.Txn) error {
+			err := txn.Set([]byte(dsares.Zone), bytesdsa)
+			return err
+		})
+		if errup != nil {
+			log.Println("DSALog: Error saving new delegation to badger DB")
+			return
 		}
+
+		log.Println("Logger: Added a DSA")
 	}
-	return nil, nil, errors.New("label not found")
+
 }
-*/

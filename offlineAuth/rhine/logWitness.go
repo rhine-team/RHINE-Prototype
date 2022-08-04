@@ -2,7 +2,6 @@ package rhine
 
 import (
 	"bytes"
-	//"crypto/ed25519"
 	"crypto/sha256"
 	"log"
 )
