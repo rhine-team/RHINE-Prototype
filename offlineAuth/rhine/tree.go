@@ -6,7 +6,7 @@ import (
 	"errors"
 	"log"
 
-	"github.com/cbergoon/merkletree"
+	"github.com/RubFischer/merkletree"
 )
 
 type MPathProofType int
@@ -132,19 +132,19 @@ func (d *DSA) GetMPathProofPresence(zname string) (*MPathProof, bool, error) {
 	// Assumes subzones== internal leaf list
 	var c DSLeafContent
 
-	for i, sz := range d.subzones {
+	for i, sz := range d.Subzones {
 		if sz.Start.Zone == z.Zone { //sz.start.alv == z.alv
 			c = sz
 			break
 		}
 
-		if i == len(d.subzones)-1 {
+		if i == len(d.Subzones)-1 {
 			// Zone z is not in the DSA
 			return nil, false, nil
 		}
 	}
 
-	pa, ind, err := d.acc.GetMerklePath(c)
+	pa, ind, err := d.Acc.GetMerklePath(c)
 	if err != nil {
 		return nil, false, err
 	}
@@ -167,7 +167,7 @@ func (d *DSA) GetMPathProofAbsence(zname string) (*MPathProof, bool, error) {
 	// Assumes subzones== internal leaf list
 	var c DSLeafContent
 
-	for _, sz := range d.subzones {
+	for _, sz := range d.Subzones {
 		if sz.Start.Zone == z.Zone { //&& sz.start.alv == z.alv
 			// Element is actually present, we return false and no proof
 			log.Println("Element is actually present:", sz.Start.Zone, " AND ", z.Zone)
@@ -183,7 +183,7 @@ func (d *DSA) GetMPathProofAbsence(zname string) (*MPathProof, bool, error) {
 		}
 	}
 
-	pa, ind, err := d.acc.GetMerklePath(c)
+	pa, ind, err := d.Acc.GetMerklePath(c)
 	if err != nil {
 		return nil, false, err
 	}

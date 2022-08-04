@@ -5,16 +5,30 @@ import (
 	"errors"
 	"log"
 
-	//"github.com/google/certificate-transparency-go/x509"
 	_ "github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
 	pf "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/aggregator"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/rhine"
-	//"google.golang.org/grpc"
 )
 
 type AggServer struct {
 	pf.UnimplementedAggServiceServer
 	AggManager *rhine.AggManager
+}
+
+func (s *AggServer) DSRetrieval(ctx context.Context, in *pf.RetrieveDSALogRequest) (*pf.RetrieveDSALogResponse, error) {
+	res := &pf.RetrieveDSALogResponse{}
+
+	dsaBytes, dsaSigs, err := s.AggManager.Dsalog.DSRetrieve(in.RequestedZones, s.AggManager.GetPrivKey(), s.AggManager.DB)
+	if err != nil {
+		return res, err
+	}
+
+	res = &pf.RetrieveDSALogResponse{
+		DSAPayload:    dsaBytes,
+		DSASignatures: dsaSigs,
+	}
+	return res, nil
+
 }
 
 func (s *AggServer) SubmitNDS(ctx context.Context, in *pf.SubmitNDSRequest) (*pf.SubmitNDSResponse, error) {

@@ -58,7 +58,7 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
-	dspRequest := &logp.DSProofRetRequest{Parentzone: psr.ChildZone, Childzone: psr.ParentZone}
+	dspRequest := &logp.DSProofRetRequest{Childzone: psr.ChildZone, Parentzone: psr.ParentZone}
 
 	//log.Printf("Our DSPRequest %+v", dspRequest)
 
@@ -229,17 +229,24 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 	}
 
 	logConfirmList = append(logConfirmList, *logConf)
-	aggConfirmListBytes = append(logConfirmListBytes, rSubAcfm.Lcfm)
+	logConfirmListBytes = append(logConfirmListBytes, rSubAcfm.Lcfm)
 
 	// Check if LogConfirms are correctly signed
 	if !rhine.VerifyLogConfirmSlice(logConfirmList, s.Ca.LogMap) {
 		return res, errors.New("A LogConfirm was not correctly signed")
 	}
-
-	//TODO SCT Checks!
+	log.Println("CA: All LogConfirms checked and valid")
 
 	// Issue Cert!
-	chilcert := s.Ca.IssueRHINECert(preRC, psr, rSubAcfm.SCT)
+	chilcert := s.Ca.IssueRHINECert(preRC, psr, [][]byte{rSubAcfm.SCT})
+
+	// Check SCT
+	// We check SCT after embedding of SCTs, to reuse functions
+	// TODO key mapping
+	if err := rhine.VerifyEmbeddedSCTs(chilcert, s.Ca.CACertificate, s.Ca.LogMap[s.Ca.LogList[0]].Pubkey); err != nil {
+		log.Println("CA: Verification of atleast one SCT failed")
+		return res, err
+	}
 
 	//log.Println(chilcert)
 

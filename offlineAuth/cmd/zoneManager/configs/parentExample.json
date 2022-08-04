@@ -13,7 +13,7 @@
 	
 	"CAName" : "localhost:10000",
 	"CAServerAddr" : "localhost:10000",
-	"CAPubKeyPath" : "data/pubkeys/ca/CA_pub.pem",
+	"CACertificatePath" : "data/roots/CACert.pem",
 	
 	"ChildrenKeyDirectoryPath" : "data/pubkeys/children/"
 }

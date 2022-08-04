@@ -4,7 +4,7 @@ package rhinelog;
 
 option go_package = "github.com/rhine-team/RHINE-Prototype/offlineAuth/components/log";
 
-// Service offered by the parent
+// Service offered by the log
 service LogService {
   rpc DSProofRet (DSProofRetRequest) returns (DSProofRetResponse) {}
   
@@ -89,7 +89,7 @@ message LogWitness {
   bytes sig = 2;
 }
 
-// todo
+// deprecated
 message LogAppendRequest {
   bytes rid = 1;
   bytes csr = 2;
@@ -98,7 +98,7 @@ message LogAppendRequest {
   NDS new_delegation = 5;
 }
 
-// todo
+// deprecated
 message LogAppendResponse {
   bytes rid = 1;
   LogWitness lwit = 2;

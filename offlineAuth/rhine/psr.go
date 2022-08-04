@@ -39,17 +39,6 @@ func (psr *Psr) Verify(roots *x509.CertPool) error {
 	if err := CheckRCertNameAndValid(psr.pcert, pzone, roots); err != nil {
 		return err
 	}
-	/*
-		if _, err = psr.pcert.Verify(x509.VerifyOptions{
-			DNSName: pzone,
-			Roots:   roots,
-		}); err != nil {
-			log.Println("Wrong parent Cert/ Parent Name", err)
-			log.Println("DSNNames then pzone: ", psr.pcert.DNSNames, pzone)
-			log.Printf("Cert %+v", psr.pcert)
-			return err
-		}
-	*/
 
 	if ok := psr.psignedcsr.Verify(psr.pcert.PublicKey); !ok {
 		log.Println("ACSR not valid!")

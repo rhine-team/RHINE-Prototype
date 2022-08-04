@@ -2,7 +2,6 @@ package rhine
 
 import (
 	"bytes"
-	"encoding/gob"
 	"log"
 
 	"github.com/google/certificate-transparency-go/x509"
@@ -25,22 +24,14 @@ type toSignDsp struct {
 }
 
 func (dsp *Dsp) Sign(priv interface{}) error {
-
-	// TODO Change Away from GOB
-	var message bytes.Buffer
-	enc := gob.NewEncoder(&message)
-
-	err := enc.Encode(toSignDsp{
-		Dsum:   dsp.Dsum,
-		EpochT: dsp.EpochT,
-	})
-
+	data, err := dsp.Dsum.GetDSumToBytes()
 	if err != nil {
 		return err
 	}
+	data = append(data, []byte(string(dsp.EpochT))...)
 
 	dsp.Sig = RhineSig{
-		Data: message.Bytes(),
+		Data: data,
 	}
 
 	err = dsp.Sig.Sign(priv)
@@ -53,14 +44,26 @@ func (dsp *Dsp) Sign(priv interface{}) error {
 
 func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, alC AuthorityLevel) bool {
 
-	veri := dsp.Sig.Verify(pub)
+	// Serialize DSP
+	data, err := dsp.Dsum.GetDSumToBytes()
+	if err != nil {
+		log.Println("Failed converting DSum to bytes")
+		return false
+	}
+	data = append(data, []byte(string(dsp.EpochT))...)
+
+	// Verify dsp signature
+	newSig := RhineSig{
+		Data:      data,
+		Signature: dsp.Sig.Signature,
+	}
+	veri := newSig.Verify(pub)
 	if !veri {
 		log.Printf("The signature did not verify for the DSP: %+v", dsp)
 		return false
 	}
 
-	// TODO Verify that data matches rsig data
-
+	// Verify inclusion / exclusion using Merkle Proof
 	veriProof, err := (&dsp.Proof).VerifyMPathProof(dsp.Dsum.Dacc.Roothash, zname)
 	if !veriProof || err != nil {
 		log.Print("The Proof for DSP did not verify: %+v", dsp)
@@ -68,14 +71,15 @@ func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, 
 	}
 
 	// Check if certificate in DSP matches PCert
-	//TODO: ENABLE
-	//bytes.Compare(dsp.Dsum.Cert, ExtractTbsRCAndHash(rcertp.RawTBSCertificate))
+	if bytes.Compare(dsp.Dsum.Cert, ExtractTbsRCAndHash(rcertp, false)) != 0 {
+		log.Println("Cert in DSP does not match PCert")
+		return false
+	}
 
 	// Check legal delegation
 	if !CheckLegalDelegationAuthority(dsp.Dsum.Alv, alC) {
 		return false
 	}
 
-	// TODO more checks (time)
 	return true
 }

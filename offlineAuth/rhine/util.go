@@ -5,16 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
-	//"crypto/x509"
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509/pkix"
+	"github.com/google/certificate-transparency-go/x509util"
 	"github.com/rhine-team/RHINE-Prototype/offlineAuth/cbor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
 	"bytes"
-	//"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/gob"
 	"encoding/hex"
@@ -25,11 +24,23 @@ import (
 	"io"
 	"log"
 	"math/big"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 )
+
+// Some of these functions are from the old offlineAuth implementation
+
+func PEMBytesToHexString(pemBytes []byte) string {
+	hexString := hex.EncodeToString(pemBytes)
+	res := ""
+	for i := 0; i < len(hexString); i += 2 {
+		res = res + "\\x" + string(hexString[i]) + string(hexString[i+1])
+	}
+	return res
+}
 
 // Sends a cert-chain to the log-back-end (the CT personality using Trillian as storage layer)
 // the first entry in the chain slice should be the end-entity certificate
@@ -60,13 +71,43 @@ func SendPreCertToLogBackend(requestURL string, chain [][]byte) (*ct.SignedCerti
 
 	//fmt.Printf("SendPreCertToLogBackend: unmarshaled response: %+v", resp)
 
-	// Try to verify signature
 	sct, errsct := resp.ToSignedCertificateTimestamp()
 	if errsct != nil {
 		log.Println("Error when converting: ", errsct)
 	}
 
 	return sct, nil
+}
+
+func VerifyEmbeddedSCTs(cert *x509.Certificate, issuercert *x509.Certificate, pubKey any) error {
+	mLeaf, err := ct.MerkleTreeLeafForEmbeddedSCT([]*x509.Certificate{cert, issuercert}, 0)
+	if err != nil {
+		log.Println("Could not build ct merkle leaf out of embedded SCT")
+		return err
+	}
+
+	for _, sctEmb := range cert.SCTList.SCTList {
+		var sct *ct.SignedCertificateTimestamp
+		sct, err = x509util.ExtractSCT(&sctEmb)
+		if err != nil {
+			log.Println("Failed unmarshal of SCT")
+			return err
+		}
+
+		// Verify the signature
+		log.Println("Verifying signature from log: ", sct.LogID)
+		var verifier ct.SignatureVerifier
+		verifier = ct.SignatureVerifier{PubKey: pubKey}
+		mLeaf.TimestampedEntry.Timestamp = sct.Timestamp
+		err = verifier.VerifySCTSignature(*sct, ct.LogEntry{Leaf: *mLeaf})
+		if err != nil {
+			log.Println("Failed signature Verification of an SCT: ", err)
+			return err
+		}
+	}
+
+	// All checks passed
+	return nil
 }
 
 func EncodePublicKey(key interface{}) ([]byte, string, error) {
@@ -497,15 +538,18 @@ func CreateCertificateUsingCA(pubkey interface{}, privkey interface{}, privKeyCA
 	if _, ok := pubkey.(*ed25519.PublicKey); ok {
 		pubkey = *pubkey.(*ed25519.PublicKey)
 	}
+	seed := mrand.NewSource(time.Now().UnixNano())
+	newr := mrand.New(seed)
+
 	template := x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: name},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(time.Hour * 24 * 356),
-		BasicConstraintsValid: true,
-		IsCA:                  false,
-		KeyUsage:              x509.KeyUsageDigitalSignature,
-		DNSNames:              []string{name},
+		SerialNumber: big.NewInt(int64(newr.Intn(10000))),
+		Subject:      pkix.Name{CommonName: "RHINE_ZONE_OWNER:" + name},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(time.Hour * 24 * 356),
+		//BasicConstraintsValid: true,
+		IsCA:     false,
+		KeyUsage: x509.KeyUsageDigitalSignature,
+		DNSNames: []string{name},
 	}
 
 	parent, errL := LoadCertificatePEM(pathCACert)
@@ -547,7 +591,7 @@ func EqualKeys(a any, b any) bool {
 func GetGRPCConn(addr string) *grpc.ClientConn {
 	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.CallContentSubtype(cbor.CBOR{}.Name())))
 	if err != nil {
-		log.Fatalf("Could not connect: %v", err)
+		log.Println("Could not connect: %v", err)
 		return nil
 	}
 	return conn
