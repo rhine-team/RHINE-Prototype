@@ -9,14 +9,14 @@ The RHINE offline authentication protocol makes use of four components: Aggregat
 Loggers log certificates by using Google's Certificate Transperancy as a backend, they also serve data related to RHINE's Delegation Transperancy, for which the Aggregators are responsible for. 
 gRPC is used to connect all running components and data is marshalled for the gRPC calls using CBOR. 
 
-## Code structures
+## Code structure
 - *cbor* contains Marshalling/Unmarshalling wrappers for gRPC to use
 - *cmd* contains the command line interfaces for the different parts of the protocol, for example to start a CA or run a parent server as well as directories for test data and data bases
-- *components* contains 1. the service and message specification for our gRPC servers and the servers themselves
+- *components* contains 1. the service and message specification for our gRPC servers and 2. the servers themselves
 - *keyManager* contains some functionality related to generating keys and test certificates
 - *rhine* is a go package containing data structures related to the offlineAuth protocol as well as methods used in protocol logic
 
-The imported merkletree implementation ["github.com/RubFischer/merkletree"](github.com/RubFischer/merkletree) is a very slightly changed version of ["github.com/cbergoon/merkletree"](github.com/cbergoon/merkletree). We use ["github.com/fxamacker/cbor/v2"](https://github.com/fxamacker/cbor) as our CBOR implementation. Some parts of the code are reused from the old offlineAuth implementation by Robin Burkhard, like some util and modified keyManager functions.
+The imported merkletree implementation ["github.com/RubFischer/merkletree"](https://github.com/RubFischer/merkletree) is a very slightly changed version of ["github.com/cbergoon/merkletree"](https://github.com/cbergoon/merkletree). We use ["github.com/fxamacker/cbor/v2"](https://github.com/fxamacker/cbor) as our CBOR implementation. Some parts of the code are reused from the old offlineAuth implementation by Robin Burkhard, like some util and modified keyManager functions.
 
 
 ## How to conduct a test run
