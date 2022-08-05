@@ -1,7 +1,7 @@
 version: "3.9"
 services:
   root:
-    image: "loujie2eth/coredns"
+    image: "coredns"
     ports:
       - "10000:53/udp"
     volumes:
@@ -13,7 +13,7 @@ services:
         ipv4_address: 172.16.238.10
   
   com:
-    image: "loujie2eth/coredns"
+    image: "coredns"
     ports:
       - "10001:53/udp"
     volumes:
@@ -25,7 +25,7 @@ services:
         ipv4_address: 172.16.238.11
   
   rhine-test:
-    image: "loujie2eth/coredns"
+    image: "coredns"
     ports:
       - "10002:53/udp"
     volumes:
@@ -37,7 +37,7 @@ services:
         ipv4_address: 172.16.238.12
   
   resolver:
-    image: "loujie2eth/sdns"
+    image: "sdns"
     ports:
       - "10003:53/udp"
     volumes:
