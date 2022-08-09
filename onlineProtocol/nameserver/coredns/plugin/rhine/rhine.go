@@ -22,6 +22,7 @@ type (
 		Next plugin.Handler
 		Zones
 		transfer *transfer.Transfer
+		scion    bool
 	}
 
 	// Zones maps zone names to a *Zone.
@@ -84,7 +85,7 @@ func (rh Rhine) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) 
 		return dns.RcodeServerFailure, nil
 	}
 	ro := state.Ro()
-	answer, ns, extra, result := z.Lookup(ctx, state, qname)
+	answer, ns, extra, result := z.Lookup(ctx, state, qname, rh.scion)
 	if ro && (result == Success) {
 		extra = z.rhineDelegationProcessing(extra)
 	}

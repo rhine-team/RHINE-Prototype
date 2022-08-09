@@ -50,7 +50,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 			return ap.soa(do), ap.ns(do), nil, Success
 		case dns.TypeNS:
 			nsrrs := ap.ns(do)
-			glue := tr.Glue(nsrrs, do) // technically this isn't glue
+			glue := tr.Glue(nsrrs, do, false) // technically this isn't glue
 			return nsrrs, nil, glue, Success
 		}
 	}
@@ -159,7 +159,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				continue
 			}
 
-			glue := tr.Glue(nsrrs, do)
+			glue := tr.Glue(nsrrs, do, false)
 			if do {
 				dss := typeFromElem(elem, dns.TypeDS, do)
 				nsrrs = append(nsrrs, dss...)

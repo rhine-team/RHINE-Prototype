@@ -29,7 +29,7 @@ const (
 
 // Lookup looks up qname and qtype in the zone. When do is true DNSSEC records are included.
 // Three sets of records are returned, one for the answer, one for authority  and one for the additional section.
-func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) ([]dns.RR, []dns.RR, []dns.RR, Result) {
+func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string, scion bool) ([]dns.RR, []dns.RR, []dns.RR, Result) {
 	qtype := state.QType()
 	do := false
 	appendRRSIGs := true
@@ -50,7 +50,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 			return ap.soa(appendRRSIGs), ap.ns(appendRRSIGs), nil, Success
 		case dns.TypeNS:
 			nsrrs := ap.ns(appendRRSIGs)
-			glue := tr.Glue(nsrrs, appendRRSIGs) // technically this isn't glue
+			glue := tr.Glue(nsrrs, appendRRSIGs, scion) // technically this isn't glue
 			return nsrrs, nil, glue, Success
 		}
 	}
@@ -158,7 +158,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				continue
 			}
 
-			glue := tr.Glue(nsrrs, appendRRSIGs)
+			glue := tr.Glue(nsrrs, appendRRSIGs, scion)
 			if appendRRSIGs {
 				dss := typeFromElem(elem, dns.TypeDS, appendRRSIGs)
 				nsrrs = append(nsrrs, dss...)
