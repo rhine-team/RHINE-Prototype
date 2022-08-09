@@ -117,6 +117,59 @@ func findLocalIPAddresses() ([]net.IP, error) {
 	return list, nil
 }
 
+func getIPAddressFromScionTXT(txt *dns.TXT) net.IP {
+	content := strings.Join(txt.Txt, "")
+	addrstr := strings.SplitAfter(content, ",")[1]
+	addr := parseIPv4(addrstr)
+	return addr
+}
+
+func parseIPv4(s string) net.IP {
+	var p [net.IPv4len]byte
+	for i := 0; i < net.IPv4len; i++ {
+		if len(s) == 0 {
+			// Missing octets.
+			return nil
+		}
+		if i > 0 {
+			if s[0] != '.' {
+				return nil
+			}
+			s = s[1:]
+		}
+		n, c, ok := dtoi(s)
+		if !ok || n > 0xFF {
+			return nil
+		}
+		if c > 1 && s[0] == '0' {
+			// Reject non-zero components with leading zeroes.
+			return nil
+		}
+		s = s[c:]
+		p[i] = byte(n)
+	}
+	if len(s) != 0 {
+		return nil
+	}
+	return net.IPv4(p[0], p[1], p[2], p[3])
+}
+
+const big = 0xFFFFFF
+
+func dtoi(s string) (n int, i int, ok bool) {
+	n = 0
+	for i = 0; i < len(s) && '0' <= s[i] && s[i] <= '9'; i++ {
+		n = n*10 + int(s[i]-'0')
+		if n >= big {
+			return big, i, false
+		}
+	}
+	if i == 0 {
+		return 0, 0, false
+	}
+	return n, i, true
+}
+
 func isLocalIP(ip net.IP) (ok bool) {
 	for _, l := range localIPaddrs {
 		if ip.Equal(l) {
