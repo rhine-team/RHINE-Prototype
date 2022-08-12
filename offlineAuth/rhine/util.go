@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
+	cborv2 "github.com/fxamacker/cbor/v2"
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/x509"
 	"github.com/google/certificate-transparency-go/x509/pkix"
@@ -79,14 +80,14 @@ func SendPreCertToLogBackend(requestURL string, chain [][]byte) (*ct.SignedCerti
 	return sct, nil
 }
 
-func VerifyEmbeddedSCTs(cert *x509.Certificate, issuercert *x509.Certificate, pubKey any) error {
+func VerifyEmbeddedSCTs(cert *x509.Certificate, issuercert *x509.Certificate, pubKey []any) error {
 	mLeaf, err := ct.MerkleTreeLeafForEmbeddedSCT([]*x509.Certificate{cert, issuercert}, 0)
 	if err != nil {
 		log.Println("Could not build ct merkle leaf out of embedded SCT")
 		return err
 	}
 
-	for _, sctEmb := range cert.SCTList.SCTList {
+	for i, sctEmb := range cert.SCTList.SCTList {
 		var sct *ct.SignedCertificateTimestamp
 		sct, err = x509util.ExtractSCT(&sctEmb)
 		if err != nil {
@@ -97,7 +98,7 @@ func VerifyEmbeddedSCTs(cert *x509.Certificate, issuercert *x509.Certificate, pu
 		// Verify the signature
 		log.Println("Verifying signature from log: ", sct.LogID)
 		var verifier ct.SignatureVerifier
-		verifier = ct.SignatureVerifier{PubKey: pubKey}
+		verifier = ct.SignatureVerifier{PubKey: pubKey[i]}
 		mLeaf.TimestampedEntry.Timestamp = sct.Timestamp
 		err = verifier.VerifySCTSignature(*sct, ct.LogEntry{Leaf: *mLeaf})
 		if err != nil {
@@ -182,7 +183,27 @@ func GetParentZone(subzone string) string {
 
 }
 
-// Keep in mind that only exported fields are serialized
+// Serialize using CBOR
+func SerializeCBOR(data any) ([]byte, error) {
+	res, err := cborv2.Marshal(data)
+	if err != nil {
+		fmt.Println("Serialization error: ", err)
+		return res, err
+	}
+	return res, nil
+}
+
+// Deserialize using CBOR
+func DeserializeCBOR(bytes []byte, data any) error {
+	err := cborv2.Unmarshal(bytes, data)
+	if err != nil {
+		fmt.Println("Deserialization error: ", err)
+		return err
+	}
+	return nil
+}
+
+// Serialize using gob
 func SerializeStructure[T any](data T) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
@@ -194,6 +215,7 @@ func SerializeStructure[T any](data T) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Deserialize using gob
 func DeserializeStructure[T any](by []byte) (res T, err error) {
 	buf := bytes.NewBuffer(by)
 	dec := gob.NewDecoder(buf)

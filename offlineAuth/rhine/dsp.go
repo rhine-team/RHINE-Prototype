@@ -66,7 +66,7 @@ func (dsp *Dsp) Verify(pub interface{}, zname string, rcertp *x509.Certificate, 
 	// Verify inclusion / exclusion using Merkle Proof
 	veriProof, err := (&dsp.Proof).VerifyMPathProof(dsp.Dsum.Dacc.Roothash, zname)
 	if !veriProof || err != nil {
-		log.Print("The Proof for DSP did not verify: %+v", dsp)
+		log.Printf("The Proof for DSP did not verify: %+v", dsp)
 		return false
 	}
 

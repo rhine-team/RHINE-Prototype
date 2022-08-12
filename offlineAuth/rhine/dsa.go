@@ -3,8 +3,7 @@ package rhine
 import (
 	"crypto/sha256"
 	"time"
-
-	"github.com/RubFischer/merkletree"
+	//"github.com/rhine-team/RHINE-Prototype/offlineAuth/merkletree"
 )
 
 // Delegation Status Accumulator
@@ -13,7 +12,7 @@ type DSA struct {
 	Alv      AuthorityLevel
 	Exp      time.Time
 	Cert     []byte
-	Acc      *merkletree.MerkleTree
+	Acc      *MerkleTree
 	Subzones []DSLeafContent
 
 	Signature []byte

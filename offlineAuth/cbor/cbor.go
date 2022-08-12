@@ -6,16 +6,16 @@ import (
 )
 
 var (
-	eMode cbor.EncMode
-	dMode cbor.DecMode
+	EMode cbor.EncMode
+	DMode cbor.DecMode
 )
 
 func init() {
 	optsEnc := cbor.CanonicalEncOptions()
 	optsDec := cbor.DecOptions{}
 
-	eMode, _ = optsEnc.EncMode()
-	dMode, _ = optsDec.DecMode()
+	EMode, _ = optsEnc.EncMode()
+	DMode, _ = optsDec.DecMode()
 
 	encoding.RegisterCodec(&CBOR{})
 }
@@ -27,7 +27,7 @@ func (_ CBOR) Name() string {
 }
 
 func (c CBOR) Marshal(v interface{}) ([]byte, error) {
-	return eMode.Marshal(v)
+	return EMode.Marshal(v)
 }
 
 func (c CBOR) Unmarshal(data []byte, v interface{}) error {
@@ -35,5 +35,5 @@ func (c CBOR) Unmarshal(data []byte, v interface{}) error {
 		return nil
 	}
 
-	return dMode.Unmarshal(data, v)
+	return DMode.Unmarshal(data, v)
 }

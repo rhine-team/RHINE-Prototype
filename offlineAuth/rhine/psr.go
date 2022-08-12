@@ -56,6 +56,10 @@ func (psr *Psr) GetRhineSig() RhineSig {
 	return psr.psignedcsr
 }
 
+func (psr *Psr) GetLogs() []string {
+	return psr.csr.logs
+}
+
 func (psr *Psr) GetAlFromCSR() AuthorityLevel {
 	return psr.csr.al
 }

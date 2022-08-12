@@ -157,6 +157,7 @@ var RequestDelegCmd = &cobra.Command{
 		// Collect LOG_CONFIRMS
 		logConfirmList := []rhine.Confirm{}
 		countLCFM := 0
+		inOrderKey := []any{}
 
 		for _, lcfm := range rCA.Lcfms {
 			logConf, errTranspConfL := rhine.TransportBytesToConfirm(lcfm)
@@ -165,6 +166,9 @@ var RequestDelegCmd = &cobra.Command{
 			}
 			logConfirmList = append(logConfirmList, *logConf)
 			countLCFM++
+
+			// Create key list
+			inOrderKey = append(inOrderKey, nzm.LogMap[logConf.EntityName].Pubkey)
 		}
 		log.Println("Received ", countLCFM, " LOG_CONFIRM(S)")
 
@@ -175,7 +179,7 @@ var RequestDelegCmd = &cobra.Command{
 		log.Println("All LogConfirms checked and valid")
 
 		// Verify certificate issuance and verify the SCT included in the certificate
-		if err := rhine.VerifyEmbeddedSCTs(childce, nzm.CaCert, nzm.LogMap[nzm.LogList[0]].Pubkey); err != nil {
+		if err := rhine.VerifyEmbeddedSCTs(childce, nzm.CaCert, inOrderKey); err != nil {
 			log.Fatalf("Verification of certificate included SCTs failed!")
 		}
 		log.Println("Certificate issued by trusted CA and included SCTs are valid.")

@@ -299,6 +299,10 @@ func (lm *LogManager) FinishInitialDelegLog(dsum DSum, nds *Nds, pzone string, p
 		return retConf, nil, errsct
 	}
 
+	if sct == nil {
+		return retConf, nil, errors.New("No SCT received from Backend.")
+	}
+
 	// Serialize SCT
 	// The SCT is serialized using TLS-encoding
 	sctbytes, marshalerr := tls.Marshal(*sct)
@@ -329,13 +333,14 @@ func (lm *LogManager) GetDSAfromAggregators() {
 		log.Fatalf("No response from Aggregator: %v", err)
 	}
 
-	log.Println("What aggreg gave us", r.DSAPayload)
+	//log.Println("What aggreg gave us", r.DSAPayload)
 
 	// Add results to badger and to cache
 	// TODO add to cache
 	for _, bytesdsa := range r.DSAPayload {
 		// Deseri
-		dsares, errdeserial := DeserializeStructure[DSA](bytesdsa)
+		dsares := &DSA{}
+		errdeserial := DeserializeCBOR(bytesdsa, dsares)
 		if errdeserial != nil {
 			log.Println("Could not deseri a request")
 			return

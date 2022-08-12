@@ -123,17 +123,20 @@ func VerifyLogConfirmSlice(clist []Confirm, logMap map[string]Log) bool {
 }
 
 func (c *Confirm) ConfirmToTransportBytes() ([]byte, error) {
-	byt, err := SerializeStructure[Confirm](*c)
+	byt, err := SerializeCBOR(*c)
 	if err != nil {
+		log.Println("FAILED Serializing Confirm", err)
 		return []byte{}, err
 	}
 	return byt, nil
 }
 
 func TransportBytesToConfirm(byt []byte) (*Confirm, error) {
-	confirm, err := DeserializeStructure[Confirm](byt)
+	res := &Confirm{}
+	err := DeserializeCBOR(byt, res)
 	if err != nil {
+		log.Println("FAILED Deserializing Confirm ", err)
 		return nil, nil
 	}
-	return &confirm, nil
+	return res, nil
 }

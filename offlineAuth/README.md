@@ -22,6 +22,11 @@ The imported merkletree implementation ["github.com/RubFischer/merkletree"](http
 ## How to conduct a test run
 This section explains how to conduct a toy example of the offline authentication prototype using one logger and one aggregator. Note that key generation can be skipped if one wants to use the provided example keys.
 
+### TODO
+Explain how to get fpki repo: replace directive and git clone...
+create mysql db
+Also explain mysql setup: remove root pw and sudo priv
+
 ### Create keys and certificates
 Each of our component needs a key pair, using either RSA+SHA256 or Ed25519 for signing. Create key pairs for the logger, aggregator, ca and parent using the keyManager:
 
