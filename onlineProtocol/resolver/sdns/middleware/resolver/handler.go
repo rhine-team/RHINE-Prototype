@@ -104,10 +104,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 	if q.Name != rootzone && !req.RecursionDesired {
 		return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 	}
-	roaKey, ro := h.FindROAInCache(req.Question[0].Name)
-	if ro {
-		setRo(req)
-	}
+
 	// we shouldn't send rd and ad flag to aa servers
 	req.RecursionDesired = false
 	req.AuthenticatedData = false
@@ -134,92 +131,89 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 
 	utc := time.Now().UTC()
 	mt, _ := response.Typify(resp, utc)
-
+	log.Debug("Query completed", "query", formatQuestion(resp.Question[0]), "status", mt)
 	switch mt {
-	case response.NoError:
+	case response.NoError, response.NoData:
 		var dnskey *dns.DNSKEY
-		if !ro {
-			roa, ok := h.roaCache.Get(roaKey)
+		if resp.Question[0].Qtype == dns.TypeDNSKEY {
+			log.Debug("Qtype is DNSKEY, ROA is in the answer")
+			roa, ok := extractROAFromMsg(resp)
 			if !ok {
-				log.Info("ROA cache not working right for key: %s", roaKey)
-				// TODO(lou): Comment this failure message due to intention of not affecting normal resolution process without rhine enabled
+				log.Info(errNoROA.Error())
+			}
+			if !verifyRhineROA(roa, h.cfg.CACertificateFile) {
+				log.Info("The ROA verify failed!")
 				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 			}
-			ROA, ok := roa.(*ROA)
-			if !ok {
-				log.Info("ROA cache contains non-ROA object for key: %s", roaKey)
-				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
-			} else {
-				log.Info("Got ROA from cache")
-				dnskey = ROA.dnskey
-				addROAToMsg(ROA, resp)
-			}
+			log.Info("The ROA verified")
+			signer := roa.dnskey.Hdr.Name
+			h.roaCache.Add(hash(signer), roa)
 		} else {
-			if roa, domain, ok := extractROAFromMsg(resp); !ok {
-				log.Info("The response doesn't contain correct ROA!")
-				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
+			log.Debug("Qtype not DNSKEY, need ROA to verify")
+			rrs := resp.Answer
+			if len(rrs) == 0 {
+				rrs = resp.Ns
+			}
+			rrsigs := extractRRSet(rrs, "", dns.TypeRRSIG)
+			if len(rrsigs) == 0 {
+				log.Warn("No RRSIGs in the answer")
 			} else {
-				log.Info("The ROA successfully extracted")
-				if !verifyRhineROA(roa, h.cfg.CACertificateFile) {
-					log.Info("The ROA verify failed!")
+				var RoA *ROA
+				signer := rrsigs[0].(*dns.RRSIG).SignerName
+				if roa, ok := h.roaCache.Get(hash(signer)); ok {
+					log.Debug("ROA cache hit for signer: ", signer)
+					RoA = roa.(*ROA)
+					dnskey = RoA.dnskey
+				} else {
+					log.Debug("ROA cache not hit for, send key query to: ", signer)
+					RoA, err = getROA(ctx, signer, resp)
+					if err != nil {
+						log.Info("Failed to get ROA, error", err, err.Error())
+						break
+					} else {
+						if !verifyRhineROA(RoA, h.cfg.CACertificateFile) {
+							log.Info("The ROA verify failed!")
+							//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
+						}
+						log.Info("The ROA verified")
+						h.roaCache.Add(hash(signer), RoA)
+						dnskey = RoA.dnskey
+					}
+				}
+				addROAToMsg(RoA, resp)
+				if !rhineRRSigCheck(resp, dnskey) {
+					log.Info("The verification of RRSIGs in response failed!")
 					//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
 				}
-				log.Info("The ROA verified")
-				h.roaCache.Add(hash(dns.Fqdn(domain)), roa)
-				dnskey = roa.dnskey
 			}
 		}
-		if !rhineRRSigCheck(resp, dnskey) {
-			log.Info("The verification of RRSIGs in response failed!")
-			//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
-		}
 	}
-
+	log.Debug("Return Msg to client ", resp, resp.String())
 	return resp
 }
+func getROA(ctx context.Context, signer string, resp *dns.Msg) (roa *ROA, err error) {
+	keyReq := new(dns.Msg)
+	keyReq.SetQuestion(signer, dns.TypeDNSKEY)
+	keyReq.SetEdns0(dnsutil.DefaultMsgSize, true)
 
-func (h *DNSHandler) FindROAInCache(qname string) (key uint64, ro bool) {
-	qname = dns.Fqdn(qname)
-	k := hash(qname)
-	// TODO(lou): add checkExist() function for fast lookup instead of using Get() which acquires Rlock that leads to performance loss
-	if _, ok := h.roaCache.Get(k); ok {
-		return k, false
-	} else {
-		// Start searching in the cache for parent domain of queried domain
-		var off = 0
-		var end = false
-		for {
-			off, end = dns.NextLabel(qname, off)
-			if end {
-				break
-			}
-			parent := qname[off:]
-			k = hash(parent)
-			if i, ok := h.roaCache.Get(k); ok {
-				if delegation, ok := i.(*ROA); ok {
-					if !isDelegated(delegation.dsp, parent, qname) {
-						return k, false
-					}
-				} else {
-					log.Info("The delegation cache should only contain ROA! Wrong record: %s", parent)
-				}
-				return 0, true
-			}
-		}
-		// check rootzone
-		k = hash(rootzone)
-		if i, ok := h.roaCache.Get(k); ok {
-			if delegation, ok := i.(*ROA); ok {
-				if !isDelegated(delegation.dsp, "", qname) {
-					return k, false
-				}
-			} else {
-				log.Warn("The delegation cache should only contain ROA! Wrong record: %s", rootzone)
-			}
-		}
+	var msg *dns.Msg
+	q := resp.Question[0]
 
+	if q.Qtype != dns.TypeDNSKEY || q.Name != signer {
+		msg, err = dnsutil.ExchangeInternal(ctx, keyReq)
+		if err != nil {
+			return
+		}
+	} else if q.Qtype == dns.TypeDNSKEY {
+		msg = resp
 	}
-	return 0, true
+	log.Debug(msg.String())
+	roa, ok := extractROAFromMsg(msg)
+	if !ok {
+		return nil, errNoROA
+	}
+	log.Debug("ROA got from Key Request")
+	return roa, nil
 }
 
 func (h *DNSHandler) additionalAnswer(ctx context.Context, req, msg *dns.Msg) *dns.Msg {

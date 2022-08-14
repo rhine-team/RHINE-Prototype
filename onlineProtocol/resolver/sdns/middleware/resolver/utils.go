@@ -23,6 +23,7 @@ var (
 	errMissingDNSKEY          = errors.New("no matching DNSKEY found for RRSIG records")
 	errInvalidSignaturePeriod = errors.New("incorrect signature validity period")
 	errMissingSigned          = errors.New("signed records are missing")
+	errNoROA                  = errors.New("no complete ROA records found")
 
 	localIPaddrs []net.IP
 )

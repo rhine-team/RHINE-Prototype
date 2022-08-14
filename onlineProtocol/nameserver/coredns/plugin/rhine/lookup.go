@@ -184,8 +184,6 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string, 
 		}
 
 		rrs := elem.Type(qtype)
-		// rhine: add txt records
-		//rrs = append(rrs, elem.Type(dns.TypeTXT)...)
 
 		// NODATA
 		if len(rrs) == 0 {
@@ -205,8 +203,10 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string, 
 			sigs = rrutil.SubTypeSignature(sigs, qtype)
 			rrs = append(rrs, sigs...)
 		}
+		if qtype == dns.TypeDNSKEY {
+			additional = z.rhineDelegationProcessing(additional)
+		}
 		return rrs, ap.ns(appendRRSIGs), additional, Success
-
 	}
 
 	// Haven't found the original name.
@@ -441,23 +441,21 @@ func (z *Zone) rhineDelegationProcessing(rrs []dns.RR) []dns.RR {
 		apex = ""
 	}
 	if rcert, ok := tr.Search("_rhinecert." + apex); ok {
+		log.Info("Found RCert")
 		Rcert := rcert.Type(dns.TypeTXT)
 		rrs = append(rrs, Rcert...)
 	}
 	if rSig, ok := tr.Search("_dsp." + apex); ok {
+		log.Info("Found DSP")
 		RhineSig := rSig.Type(dns.TypeTXT)
 		rrs = append(rrs, RhineSig...)
 	}
-	if zoneAuth, ok := tr.Search(z.origin); ok {
-		rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
-
-		sigs := zoneAuth.Type(dns.TypeRRSIG)
-		sig := rrutil.SubTypeSignature(sigs, dns.TypeDNSKEY)
-		rrs = append(rrs, sig...)
-	}
-	//if _dnskey, ok := tr.Search("_rhinezsk." + z.origin); ok {
-	//	dnskey := _dnskey.Type(dns.TypeDNSKEY)
-	//	rrs = append(rrs, dnskey...)
+	//if zoneAuth, ok := tr.Search(z.origin); ok {
+	//	rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
+	//
+	//	sigs := zoneAuth.Type(dns.TypeRRSIG)
+	//	sig := rrutil.SubTypeSignature(sigs, dns.TypeDNSKEY)
+	//	rrs = append(rrs, sig...)
 	//}
 
 	return rrs

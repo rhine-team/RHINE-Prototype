@@ -16,9 +16,7 @@ const (
 
 	txtrhinecertprefix = "rhineCert Ed25519"
 	txtsigvalueprefix  = "rhineSig "
-
-	_RO               = 1 << 14 // RHINE OK
-	defaultUDPBufSize = 2048
+	defaultUDPBufSize  = 2048
 )
 
 type ROA struct {
@@ -26,6 +24,18 @@ type ROA struct {
 	dsp    *dns.TXT
 	dnskey *dns.DNSKEY
 	keySig *dns.RRSIG
+}
+
+func Size(m *dns.Msg) {
+	o := m.IsEdns0()
+	if o != nil {
+		o.SetUDPSize(defaultUDPBufSize)
+		return
+	}
+
+	o = &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
+	o.SetUDPSize(defaultUDPBufSize)
+	m.Extra = append(m.Extra, o)
 }
 
 func verifyRhineROA(roa *ROA, cert []byte) bool {
@@ -43,35 +53,6 @@ func verifyRhineROA(roa *ROA, cert []byte) bool {
 		fmt.Printf("[RHINE] RhineSig successfully verified\n")
 		return true
 	}
-}
-
-// SetRoOpt sets the RO (RHINE OK) bit.
-// If we pass an argument, set the DO bit to that value.
-// It is possible to pass 2 or more arguments. Any arguments after the 1st is silently ignored.
-func SetRoOpt(rr *dns.OPT, do ...bool) {
-	if len(do) == 1 {
-		if do[0] {
-			rr.Hdr.Ttl |= _RO
-		} else {
-			rr.Hdr.Ttl &^= _RO
-		}
-	} else {
-		rr.Hdr.Ttl |= _RO
-	}
-}
-
-func setRo(m *dns.Msg) {
-	o := m.IsEdns0()
-	if o != nil {
-		SetRoOpt(o)
-		o.SetUDPSize(defaultUDPBufSize)
-		return
-	}
-
-	o = &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
-	SetRoOpt(o)
-	o.SetUDPSize(defaultUDPBufSize)
-	m.Extra = append(m.Extra, o)
 }
 
 func ParseVerifyRhineCertTxtEntry(txt *dns.TXT, CaCert []byte) (*x509.Certificate, ed25519.PublicKey, error) {

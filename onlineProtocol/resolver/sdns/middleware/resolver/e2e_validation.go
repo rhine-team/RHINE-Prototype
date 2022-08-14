@@ -29,56 +29,6 @@ type ROA struct {
 	keySig *dns.RRSIG
 }
 
-// Ro returns the value of the DO (DNSSEC OK) bit.
-func Ro(rr *dns.OPT) bool {
-	return rr.Hdr.Ttl&_RO == _RO
-}
-
-// SetRoOpt sets the RO (RHINE OK) bit.
-// If we pass an argument, set the DO bit to that value.
-// It is possible to pass 2 or more arguments. Any arguments after the 1st is silently ignored.
-func SetRoOpt(rr *dns.OPT, ro ...bool) {
-	if len(ro) == 1 {
-		if ro[0] {
-			rr.Hdr.Ttl |= _RO
-		} else {
-			rr.Hdr.Ttl &^= _RO
-		}
-	} else {
-		rr.Hdr.Ttl |= _RO
-	}
-}
-
-func setRo(m *dns.Msg) {
-	o := m.IsEdns0()
-	if o != nil {
-		SetRoOpt(o)
-		o.SetUDPSize(defaultUDPBufSize)
-		return
-	}
-
-	o = &dns.OPT{Hdr: dns.RR_Header{Name: ".", Rrtype: dns.TypeOPT}}
-	SetRoOpt(o)
-	o.SetUDPSize(defaultUDPBufSize)
-	m.Extra = append(m.Extra, o)
-}
-
-func isDelegated(dsp *dns.TXT, origin string, qname string) bool {
-	if dsp == nil {
-		return false
-	}
-	delegs := strings.Join(dsp.Txt, " ")
-	for _, deleg := range strings.Split(delegs, " ") {
-		zone := deleg + "." + origin
-		// If there is delegation for closer parent of the queried domain but not cached,
-		// we have to query the dnskey/rcert for it.
-		if dns.IsSubDomain(zone, qname) {
-			return true
-		}
-	}
-	return false
-}
-
 func verifyRhineROA(roa *ROA, certFile string) bool {
 	_, publiKey, err := ParseVerifyRhineCertTxtEntry(roa.rcert, certFile)
 	if err != nil {
@@ -138,15 +88,16 @@ func ParseVerifyRhineCertTxtEntry(txt *dns.TXT, certFile string) (*x509.Certific
 	return cert, cert.PublicKey.(ed25519.PublicKey), nil
 }
 
-func extractROAFromMsg(msg *dns.Msg) (roa *ROA, domain string, ok bool) {
+func extractROAFromMsg(msg *dns.Msg) (roa *ROA, ok bool) {
 	var (
 		rcert  *dns.TXT
 		dnskey *dns.DNSKEY
 		keySig *dns.RRSIG
 		dsp    *dns.TXT
 	)
-	extra := msg.Extra
-	for _, r := range msg.Extra {
+	rrs := msg.Answer
+	rrs = append(rrs, msg.Extra...)
+	for _, r := range rrs {
 		switch r.Header().Rrtype {
 		case dns.TypeDNSKEY:
 			dnskey = r.(*dns.DNSKEY)
@@ -156,37 +107,29 @@ func extractROAFromMsg(msg *dns.Msg) (roa *ROA, domain string, ok bool) {
 				rcert = txt
 			} else if IsDSP(txt) {
 				dsp = txt
-			} else {
-				extra = append(extra, r)
 			}
 		case dns.TypeRRSIG:
 			rrsig := r.(*dns.RRSIG)
 			if rrsig.TypeCovered == dns.TypeDNSKEY {
 				keySig = rrsig
 			}
-		default:
-			extra = append(extra, r)
 		}
 	}
-	msg.Extra = extra
 
 	if rcert == nil || dnskey == nil || keySig == nil {
-		return nil, "", false
+		return nil, false
 	}
-	domain = dnskey.Hdr.Name
-	//domain = strings.SplitAfter(rcert.Header().Name, DNSrhineCertPrefix)[1]
-	//if domain == "" {
-	//	domain = "."
-	//}
 
-	return &ROA{keySig: keySig, rcert: rcert, dnskey: dnskey, dsp: dsp}, domain, true
+	return &ROA{keySig: keySig, rcert: rcert, dnskey: dnskey, dsp: dsp}, true
 }
 
 func addROAToMsg(roa *ROA, msg *dns.Msg) {
 	msg.Extra = append(msg.Extra, roa.dnskey)
 	msg.Extra = append(msg.Extra, roa.rcert)
 	msg.Extra = append(msg.Extra, roa.keySig)
-	msg.Extra = append(msg.Extra, roa.dsp)
+	if roa.dsp != nil {
+		msg.Extra = append(msg.Extra, roa.dsp)
+	}
 }
 func IsRCert(txt *dns.TXT) bool {
 	return strings.HasPrefix(txt.Header().Name, DNSrhineCertPrefix)
