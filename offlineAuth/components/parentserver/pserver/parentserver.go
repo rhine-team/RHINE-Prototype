@@ -22,7 +22,7 @@ func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationReque
 	log.Printf("InitDelegation service called with RID: %s\n", rhine.EncodeBase64(in.Rid))
 
 	// Verify the received csr
-	csr, err := s.Zm.VerifyChildCSR(in.Csr)
+	_, psr, parentcert, err := s.Zm.VerifyChildCSR(in.Csr)
 	if err != nil {
 		return res, err
 	}
@@ -30,7 +30,7 @@ func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationReque
 	log.Println("CSR is valid")
 
 	// Generate Acsr
-	psr := s.Zm.CreatePSR(csr)
+	//psr := s.Zm.CreatePSR(csr)
 	rsig := psr.GetRhineSig()
 	//log.Printf("The following ACSR was constructed: %+v\n", rsig)
 
@@ -41,7 +41,7 @@ func (s *PServer) InitDelegation(ctx context.Context, in *ps.InitDelegationReque
 			Data: rsig.Data,
 			Sig:  rsig.Signature,
 		},
-		Rcertp: s.Zm.Rcert.Raw,
+		Rcertp: parentcert,
 	}
 	//log.Printf("We send response: %+v\n", res)
 	//log.Printf("Delegation successfull: InitDelegationResponse sent for RID : %+v ", in.Rid)

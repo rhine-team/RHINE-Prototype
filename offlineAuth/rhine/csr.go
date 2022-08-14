@@ -127,6 +127,7 @@ func VerifyCSR(csr []byte) (*Csr, error) {
 	var csrRequest *x509.CertificateRequest
 	csrRequest, err := x509.ParseCertificateRequest(csr)
 	if err != nil {
+		log.Println("Could not parse csr:", err)
 		return nil, err
 	}
 

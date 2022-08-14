@@ -15,5 +15,6 @@
     "CAServerAddr" : "localhost:10000",
     "CACertificatePath" : "data/roots/CACert.pem",
     
-    "ChildrenKeyDirectoryPath" : "data/pubkeys/children/"
+    "ChildrenKeyDirectoryPath" : "data/pubkeys/children/",
+    "ParentDataBaseDirectory" : ""
 }

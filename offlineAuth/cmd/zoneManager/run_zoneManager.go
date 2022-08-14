@@ -30,6 +30,7 @@ var ParentServer string
 var OutputPath string
 var ZoneIsIndependent bool
 var ZoneIsDelegationOnly bool
+var PrivateKeyPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "run_zoneManager",
@@ -61,6 +62,10 @@ var RequestDelegCmd = &cobra.Command{
 
 		if ParentServer != "" {
 			cof.ParentServerAddr = ParentServer
+		}
+
+		if PrivateKeyPath != "" {
+			cof.PrivateKeyPath = PrivateKeyPath
 		}
 
 		// Construct AuthorityLevel
@@ -255,6 +260,7 @@ func init() {
 	RequestDelegCmd.Flags().BoolVar(&ZoneIsIndependent, "ind", true, "Flag Independent ChildZone")
 	RequestDelegCmd.Flags().BoolVar(&ZoneIsDelegationOnly, "delegOnly", false, "Flag Independent ChildZone")
 	RequestDelegCmd.Flags().StringVar(&ParentServer, "parentaddr", "", "Address with port of parent server")
+	RequestDelegCmd.Flags().StringVar(&PrivateKeyPath, "privkey", "", "Path to private key")
 
 	RunParentServer.Flags().StringVar(&ParentConfig, "config", "configs/parentExample.json", "ConfigPath")
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 
+	badger "github.com/dgraph-io/badger/v3"
 	cborv2 "github.com/fxamacker/cbor/v2"
 	ct "github.com/google/certificate-transparency-go"
 	"github.com/google/certificate-transparency-go/x509"
@@ -607,6 +608,35 @@ func EqualKeys(a any, b any) bool {
 	default:
 		log.Printf("EqualKeys: False type. Type a: %T, Type b: %T", a, b)
 		return false
+	}
+}
+
+func GetValueFromDB(db *badger.DB, key []byte) ([]byte, error) {
+	res := []byte{}
+	err := db.View(func(txn *badger.Txn) error {
+		var errview error
+		item, errview := txn.Get(key)
+
+		if errview != nil {
+			return errview
+		}
+
+		errview = item.Value(func(val []byte) error {
+			// Copy the value
+			res = append(res, val...)
+
+			return nil
+		})
+		if errview != nil {
+			return errview
+		}
+
+		return nil
+	})
+	if err != nil {
+		return []byte{}, err
+	} else {
+		return res, nil
 	}
 }
 

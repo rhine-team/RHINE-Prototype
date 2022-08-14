@@ -157,7 +157,7 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 		return res, errors.New("Lwit did not match with NDS")
 	}
 
-	log.Println("LOG_WITNESS verified and matched with NDS")
+	log.Println("LOG_WITNESS list verified and matched with NDS")
 
 	// Construct message for Aggregator containing list of log witnesses and NDS
 	var lwitAggList []*agg.Lwit
@@ -204,6 +204,7 @@ func (s *CAServer) SubmitNewDelegCA(ctx context.Context, in *pf.SubmitNewDelegCA
 
 		aggConf, errTranspConf := rhine.TransportBytesToConfirm(rAgg.Acfmg)
 		if errTranspConf != nil {
+			log.Println("Transport bytes to confirm failed: ", errTranspConf)
 			return res, errTranspConf
 		}
 
