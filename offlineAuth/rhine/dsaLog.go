@@ -7,8 +7,8 @@ import (
 	logger "log"
 	"time"
 
-	"github.com/RubFischer/merkletree"
 	badger "github.com/dgraph-io/badger/v3"
+	//"github.com/rhine-team/RHINE-Prototype/offlineAuth/merkletree"
 )
 
 var defaultHashStrat = sha256.New
@@ -96,16 +96,19 @@ func (lm *DSALog) DSProofRet(PZone string, CZone string, ptype MPathProofType, d
 
 				// Parse the value
 				// Values are serialized DSA structs
-				dsares, errdeserial := DeserializeStructure[DSA](val)
+				dsares := &DSA{}
+				errdeserial := DeserializeCBOR(val, dsares)
 
 				if errdeserial != nil {
 					return errdeserial
 				}
 
-				log = &dsares
+				log = dsares
 
-				// Rebuild Merkle Tree
-				log.Acc, _ = merkletree.NewTree(DSAContentToGeneric(log.Subzones))
+				// Relink Merkle Tree
+				log.Acc.RestoreAfterMarshalling()
+				//log.Acc, _ = NewTree(log.Subzones)
+				//log.Acc.RestoreAfterMarshalling()
 
 				return nil
 			})
@@ -210,38 +213,10 @@ func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []
 	// Check if DSA for parent zone exists
 	dsa, prs := d.zoneToDSA[pZone]
 	if !prs {
-		/*
-		   // Absent, so create a new DSA
-		   // We create two leafs, representing negative and positive infinity
-		   newDelegZone := DSLeafZone{
-		           zone:  cZone,
-		           alv:  cAlv,
-		           zoneType: ExistingZone,
-		   }
-
-		   negativeInfLeaf := DSLeafContent{
-		           start: GetNegativeInfinityZone(),
-		           end: newDelegZone,
-		   }
-
-		   positiveInfLeaf := DSLeafContent{
-		           start: newDelegZone,
-		           end: GetPositiveInfinityZone(),
-		   }
-		   content := []DSLeafContent{negativeInfLeaf, positiveInfLeaf}
-		*/
-
-		//content := []DSLeafContent{}
 		content := []DSLeafContent{}
 		content = InsertNewDSLeafZone(content, newDelegZone)
-		//TODO must be a better way
-		cont := []merkletree.Content{}
 
-		for _, co := range content {
-			cont = append(cont, co)
-		}
-
-		newTree, err := merkletree.NewTree(cont)
+		newTree, err := NewTree(content)
 		if err != nil {
 			return err
 		}
@@ -259,13 +234,15 @@ func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []
 		// A DSA for the parent zone exists
 		dsa.Subzones = InsertNewDSLeafZone(dsa.Subzones, newDelegZone)
 
-		//TODO must be a better way
-		cont := []merkletree.Content{}
-
-		for _, co := range dsa.Subzones {
-			cont = append(cont, co)
+		if dsa.Acc == nil {
+			newTree, err := NewTree(dsa.Subzones)
+			if err != nil {
+				return err
+			}
+			dsa.Acc = newTree
 		}
-		err := dsa.Acc.RebuildTreeWith(cont)
+
+		err := dsa.Acc.RebuildTreeWith(dsa.Subzones)
 		if err != nil {
 			return err
 		}
@@ -273,11 +250,14 @@ func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []
 
 	// The new delegation has been added to cache, now add it to the DB
 
-	// We have to clear MT, as circular structs do not work with gob
-	tempdsaAcc := dsa.Acc
-	dsa.Acc = nil
-	dsabytes, _ := SerializeStructure[DSA](*dsa)
-	dsa.Acc = tempdsaAcc
+	// We have to remove cyclical links
+	dsa.Acc.PrepareForMarshalling()
+	dsabytes, errser := SerializeCBOR(*dsa)
+	dsa.Acc.RestoreAfterMarshalling()
+	if errser != nil {
+		log.Println("The following error while serializing: ", errser)
+		return errser
+	}
 
 	err := db.Update(func(txn *badger.Txn) error {
 		err := txn.Set([]byte(pZone), dsabytes)
@@ -298,26 +278,29 @@ func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []
 	}
 
 	content = append(content, emptyTreeCont)
+	newTreeChild, errtree := NewTree(content)
+	if errtree != nil {
+		return errtree
+	}
 
 	dsanew := &DSA{
 		Zone: cZone,
 		Alv:  cAlv,
 		//Exp:      exp,
 		Cert:     cCert,
-		Acc:      nil,
+		Acc:      newTreeChild,
 		Subzones: content,
 	}
 	d.zoneToDSA[cZone] = dsanew
 
 	// The new DSA of the child can be added
-	tempAcc := dsanew.Acc
-	dsanew.Acc = nil
-	dsabytes, errserial := SerializeStructure[DSA](*dsanew)
+	dsanew.Acc.PrepareForMarshalling()
+	dsabytes, errserial := SerializeCBOR(*dsanew)
+	dsanew.Acc.RestoreAfterMarshalling()
 	if errserial != nil {
 		log.Println("DSALog: Error serializing new child DSA", errserial)
 		return errserial
 	}
-	dsanew.Acc = tempAcc
 
 	err = db.Update(func(txn *badger.Txn) error {
 
@@ -332,13 +315,4 @@ func (d *DSALog) AddDelegationStatus(pZone string, pAlv AuthorityLevel, pCert []
 	log.Println("DSALog: New delegation added to cache and badger DB")
 
 	return nil
-}
-
-func DSAContentToGeneric(dsalist []DSLeafContent) []merkletree.Content {
-	cont := []merkletree.Content{}
-
-	for _, co := range dsalist {
-		cont = append(cont, co)
-	}
-	return cont
 }

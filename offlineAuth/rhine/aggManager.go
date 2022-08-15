@@ -174,7 +174,7 @@ func (a *AggManager) AcceptNDSAndStore(n *Nds) (*Confirm, error) {
 
 	// Store new delegation
 	// Note: We leave parent arguments on zero, because they are not needed (we know a parent exists already)
-	a.Dsalog.AddDelegationStatus(GetParentZone(n.Nds.Zone.Name), 0, []byte{}, n.Nds.Exp, n.Nds.Zone.Name, n.Nds.Al, n.Nds.TbsCert, a.DB)
+	//a.Dsalog.AddDelegationStatus(GetParentZone(n.Nds.Zone.Name), 0, []byte{}, n.Nds.Exp, n.Nds.Zone.Name, n.Nds.Al, n.Nds.TbsCert, a.DB)
 
 	// Create AGG_Confirm
 	aggc, errconf := CreateConfirm(0, n, a.Agg.Name, dsum, a.privkey)

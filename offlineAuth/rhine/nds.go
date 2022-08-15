@@ -85,7 +85,6 @@ func (n *Nds) CheckAgainstCSR(csr *Csr) bool {
 }
 
 // Matches Lwits against a NDS
-// NOTE: Never use gob encoding to make bytes comparable across systems!
 func (n *Nds) MatchWithLwits(lwitslist []Lwit) bool {
 	res := true
 	for _, lw := range lwitslist {
@@ -158,6 +157,7 @@ func (n *Nds) NdsToSignBytes() ([]byte, error) {
 	return hasher.Sum(nil), nil
 }
 
+/*
 func (n *Nds) NdsToBytes() ([]byte, error) {
 	byt, err := SerializeStructure[Nds](*n)
 	if err != nil {
@@ -174,27 +174,43 @@ func BytesToNds(byt []byte) (*Nds, error) {
 	return &nds, nil
 }
 
-// Any certificates this function is called with needs to be poisoned
-// if removeSCT is set to TRUE, the SCT list will be removed from the certificate
+*/
+
+func (n *Nds) NdsToBytes() ([]byte, error) {
+	byt, err := SerializeCBOR(*n)
+	if err != nil {
+		log.Println("FAILED Serializing NDS", err)
+		return []byte{}, err
+	}
+	return byt, nil
+}
+
+func BytesToNds(byt []byte) (*Nds, error) {
+	//confirm, err := DeserializeStructure[Confirm](byt)
+	res := &Nds{}
+	err := DeserializeCBOR(byt, res)
+	if err != nil {
+		log.Println("FAILED Deserializing NDS ", err)
+		return nil, nil
+	}
+	return res, nil
+}
+
 func ExtractTbsRCAndHash(cert *x509.Certificate, removeSCT bool) []byte {
 	hasher := sha256.New()
 
-	// Remove CT Poison
+	// Remove CT Poison if PreCert
 	tbsbytes := cert.RawTBSCertificate
 	if cert.IsPrecertificate() {
 		tbsbytes, _ = x509.RemoveCTPoison(tbsbytes)
 	}
 
-	if removeSCT {
-		// At least one SCTList has to be present
-		// We assume that Cert embedding SCTs is not poisoned
-		bytes, _ := x509.RemoveSCTList(cert.RawTBSCertificate)
-		hasher.Write(bytes)
-	} else {
-		//tbsce, _ := x509.ParseTBSCertificate(tbsbytes)
-		//log.Println(x509util.CertificateToString(tbsce))
-		hasher.Write(tbsbytes)
+	bytes, err := x509.RemoveSCTList(tbsbytes)
+	if err != nil {
+		// There was no SCT list
+		bytes = tbsbytes
 	}
 
+	hasher.Write(bytes)
 	return hasher.Sum(nil)
 }

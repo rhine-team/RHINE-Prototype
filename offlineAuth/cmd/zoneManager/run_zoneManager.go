@@ -30,6 +30,7 @@ var ParentServer string
 var OutputPath string
 var ZoneIsIndependent bool
 var ZoneIsDelegationOnly bool
+var PrivateKeyPath string
 
 var rootCmd = &cobra.Command{
 	Use:   "run_zoneManager",
@@ -61,6 +62,10 @@ var RequestDelegCmd = &cobra.Command{
 
 		if ParentServer != "" {
 			cof.ParentServerAddr = ParentServer
+		}
+
+		if PrivateKeyPath != "" {
+			cof.PrivateKeyPath = PrivateKeyPath
 		}
 
 		// Construct AuthorityLevel
@@ -157,6 +162,7 @@ var RequestDelegCmd = &cobra.Command{
 		// Collect LOG_CONFIRMS
 		logConfirmList := []rhine.Confirm{}
 		countLCFM := 0
+		inOrderKey := []any{}
 
 		for _, lcfm := range rCA.Lcfms {
 			logConf, errTranspConfL := rhine.TransportBytesToConfirm(lcfm)
@@ -165,6 +171,9 @@ var RequestDelegCmd = &cobra.Command{
 			}
 			logConfirmList = append(logConfirmList, *logConf)
 			countLCFM++
+
+			// Create key list
+			inOrderKey = append(inOrderKey, nzm.LogMap[logConf.EntityName].Pubkey)
 		}
 		log.Println("Received ", countLCFM, " LOG_CONFIRM(S)")
 
@@ -175,7 +184,7 @@ var RequestDelegCmd = &cobra.Command{
 		log.Println("All LogConfirms checked and valid")
 
 		// Verify certificate issuance and verify the SCT included in the certificate
-		if err := rhine.VerifyEmbeddedSCTs(childce, nzm.CaCert, nzm.LogMap[nzm.LogList[0]].Pubkey); err != nil {
+		if err := rhine.VerifyEmbeddedSCTs(childce, nzm.CaCert, inOrderKey); err != nil {
 			log.Fatalf("Verification of certificate included SCTs failed!")
 		}
 		log.Println("Certificate issued by trusted CA and included SCTs are valid.")
@@ -251,6 +260,7 @@ func init() {
 	RequestDelegCmd.Flags().BoolVar(&ZoneIsIndependent, "ind", true, "Flag Independent ChildZone")
 	RequestDelegCmd.Flags().BoolVar(&ZoneIsDelegationOnly, "delegOnly", false, "Flag Independent ChildZone")
 	RequestDelegCmd.Flags().StringVar(&ParentServer, "parentaddr", "", "Address with port of parent server")
+	RequestDelegCmd.Flags().StringVar(&PrivateKeyPath, "privkey", "", "Path to private key")
 
 	RunParentServer.Flags().StringVar(&ParentConfig, "config", "configs/parentExample.json", "ConfigPath")
 }

@@ -2,15 +2,19 @@ module github.com/rhine-team/RHINE-Prototype/offlineAuth
 
 go 1.18
 
+//replace github.com/netsec-ethz/fpki => /home/ruben/fpki
+
 require (
-	github.com/RubFischer/merkletree v0.0.0-20220803205010-9b99a9d29b57
 	github.com/dgraph-io/badger/v3 v3.2103.2
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/google/certificate-transparency-go v1.1.3
+	//github.com/netsec-ethz/fpki v0.0.0-20220731150847-ebed2c351e64
 	github.com/spf13/cobra v1.4.0
 	google.golang.org/grpc v1.47.0
 	google.golang.org/protobuf v1.28.0
 )
+
+require golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 
 require (
 	bitbucket.org/creachadair/shell v0.0.7 // indirect
@@ -65,6 +69,7 @@ require (
 	github.com/sirupsen/logrus v1.7.0 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stretchr/testify v1.7.4 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/transparency-dev/merkle v0.0.1 // indirect
 	github.com/urfave/cli v1.22.7 // indirect

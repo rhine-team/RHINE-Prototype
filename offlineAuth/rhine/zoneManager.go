@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"log"
-	"os"
+
+	//"os"
 	"time"
 
+	badger "github.com/dgraph-io/badger/v3"
 	"github.com/google/certificate-transparency-go/x509"
 )
 
@@ -30,6 +32,8 @@ type ZoneManager struct {
 	CaCert *x509.Certificate
 
 	ChildrenKeyDirectoryPath string
+
+	DB *badger.DB
 }
 
 type ZoneConfig struct {
@@ -51,6 +55,7 @@ type ZoneConfig struct {
 	CACertificatePath string
 
 	ChildrenKeyDirectoryPath string
+	ParentDataBaseDirectory  string
 }
 
 func LoadZoneConfig(Path string) (ZoneConfig, error) {
@@ -114,6 +119,18 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 		}
 	}
 
+	var db *badger.DB
+	var errdb error
+	if config.ParentDataBaseDirectory != "" {
+		// Open database (should be created if not existing yet)
+		db, errdb = badger.Open(badger.DefaultOptions(config.ParentDataBaseDirectory))
+		if errdb != nil {
+			log.Fatal(errdb)
+		}
+	} else {
+		db = nil
+	}
+
 	caPk := certCA.PublicKey
 
 	myzone := ZoneManager{
@@ -129,6 +146,7 @@ func NewZoneManager(config ZoneConfig) *ZoneManager {
 		},
 		CaCert:                   certCA,
 		ChildrenKeyDirectoryPath: config.ChildrenKeyDirectoryPath,
+		DB:                       db,
 	}
 
 	// Load Aggregator and Log info
@@ -183,45 +201,107 @@ func (zm *ZoneManager) CreateSignedCSR(authlevel AuthorityLevel, exp time.Time, 
 
 }
 
-func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, error) {
+func (zm *ZoneManager) VerifyChildCSR(rawcsr []byte) (*Csr, *Psr, []byte, error) {
 	// checks if csr signature ok
 	csr, err := VerifyCSR(rawcsr)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	log.Println("Signature on CSR valid")
 
-	// check if request for valid child zone
-	if ok := GetParentZone(csr.zone.Name) == zm.zone.Name; !ok {
-		return nil, errors.New("csr zone " + csr.zone.Name + " is not a child zone of " + zm.zone.Name)
-	}
-
-	log.Printf("%v is a child of %s", csr.zone.Name, GetParentZone(csr.zone.Name))
-
 	// Check if child key and saved key match (NOTE: / needs to be last char of the Path)
-	// TODO: Sanitize the name!!!
-	pathChildPkey := zm.ChildrenKeyDirectoryPath + csr.zone.Name + "_pub.pem"
-	if _, err := os.Stat(pathChildPkey); err != nil {
-		return nil, errors.New("Not a child zone of this parent!")
+	//TODO This is only for benchmarking purposes
+	var parentName string
+	var pcerti []byte
+	var privatekeyparent []byte
+	var pKey []byte
+	childName := csr.zone.Name
+	if childName == "example.ethz.ch" {
+		// TODO This is a shortcut to keep the toy example test runnable
+		// Generate PSR
+		psr := zm.CreatePSR(csr, zm.privkey)
+
+		return csr, psr, zm.Rcert.Raw, nil
+		/*
+			pathChildPkey := zm.ChildrenKeyDirectoryPath + csr.zone.Name + "_pub.pem"
+			if _, err := os.Stat(pathChildPkey); err != nil {
+				return nil, nil, nil, errors.New("Not a child zone of this parent!")
+			}
+
+			var errKey error
+			pKey, errKey = PublicKeyFromFile(pathChildPkey)
+			if errKey != nil {
+				return nil, nil, nil, errKey
+			}
+		*/
+	} else {
+		var childkeyPrefix = "CHILDPK_"
+		var parentKeyPrefix = "PARENTSK_"
+		var parentCertPrefix = "PARENTCERT_"
+		var err error
+		parentName = GetParentZone(childName)
+		// Get pcert
+		pcerti, err = GetValueFromDB(zm.DB, []byte(parentCertPrefix+parentName))
+		if err != nil {
+			return nil, nil, nil, errors.New("Not a child zone of this parent!")
+		}
+		// Get parent key
+		privatekeyparent, err = GetValueFromDB(zm.DB, []byte(parentKeyPrefix+parentName))
+		if err != nil {
+			return nil, nil, nil, errors.New("Not a child zone of this parent!")
+		}
+		// Get child key
+		pKey, err = GetValueFromDB(zm.DB, []byte(childkeyPrefix+childName))
+		if err != nil {
+			return nil, nil, nil, errors.New("Not a child zone of this parent!")
+		}
 	}
 
-	pKey, errKey := PublicKeyFromFile(pathChildPkey)
-	if errKey != nil {
-		return nil, errKey
-	}
-	if !EqualKeys(pKey, csr.Pkey) {
-		return nil, errors.New("Public key on parent server did not match CSR public key")
+	//childPubKey, _ := pKey.(ed25519.PublicKey)
+	log.Println("result from db", pKey)
+	//parsedKey, _ := x509.ParsePKIXPublicKey(pKey)
+	//log.Println("Parse", parsedKey)
+	//childPubKey, _ := parsedKey.(ed25519.PublicKey)
+	childPubKey := ed25519.PublicKey(pKey)
+	log.Println("CHILDPK", childPubKey)
+	log.Println("CSPK", csr.Pkey)
+	if !EqualKeys(childPubKey, csr.Pkey) {
+		return nil, nil, nil, errors.New("Public key on parent server did not match CSR public key")
 	}
 
 	log.Println("Child public key found on ParentServer")
 
-	//log.Printf("CSR when verifying child csr %+v", csr)
+	if childName == "example.ethz.ch" {
+		/*
+			privatekeyparent = zm.privkey
+			pcerti = zm.Rcert.Raw
 
-	return csr, nil
+			// check if request for valid child zone
+			if ok := GetParentZone(csr.zone.Name) == zm.zone.Name; !ok {
+				return nil, nil, nil, errors.New("csr zone " + csr.zone.Name + " is not a child zone of " + zm.zone.Name)
+			}
+
+			log.Printf("%v is a child of %s", csr.zone.Name, GetParentZone(csr.zone.Name))
+		*/
+	}
+
+	// Parse private key
+	privatekeyparentParsed := ed25519.PrivateKey(privatekeyparent)
+
+	// Generate PSR
+	psr := zm.CreatePSR(csr, privatekeyparentParsed)
+
+	log.Printf("Print the psr %+v", psr)
+
+	//parsedCert, _ := x509.ParseCertificate(pcerti)
+	//log.Println("Certificat pubkey,", parsedCert.PublicKey)
+	//log.Println("Key from db", privatekeyparentParsed.Public())
+
+	return csr, psr, pcerti, nil
 }
 
-func (zm *ZoneManager) CreatePSR(csr *Csr) *Psr {
+func (zm *ZoneManager) CreatePSR(csr *Csr, privatekey any) *Psr {
 	psr := Psr{
 		csr:        csr,
 		psignedcsr: RhineSig{},
@@ -230,7 +310,7 @@ func (zm *ZoneManager) CreatePSR(csr *Csr) *Psr {
 	}
 
 	psr.psignedcsr.Data = csr.signedcsr
-	psr.psignedcsr.Sign(zm.privkey)
+	psr.psignedcsr.Sign(privatekey)
 
 	return &psr
 }
