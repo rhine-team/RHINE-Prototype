@@ -635,30 +635,63 @@ func (r *Resolver) checkGlueRR(resp *dns.Msg, nss nameservers, level int) (*auth
 
 	nsipv4 := make(map[string][]string)
 	for _, a := range resp.Extra {
-		if extra, ok := a.(*dns.A); ok {
-			name := strings.ToLower(extra.Header().Name)
-			qname := resp.Question[0].Name
+		// TODO(thorben): Here resolver parses special SCION TXT in processing referral.
+		// I just test it with extracting IPv4 address from TXT. It works with our test suite.
+		// Please change the logic to parse SCION TXT as needed.
+		if r.cfg.SCION {
+			if extra, ok := a.(*dns.TXT); ok {
+				name := strings.ToLower(extra.Header().Name)
+				qname := resp.Question[0].Name
 
-			i, _ := dns.PrevLabel(qname, level)
+				i, _ := dns.PrevLabel(qname, level)
 
-			if dns.CompareDomainName(name, qname[i:]) < level {
-				// we cannot trust that glue, it doesn't cover in the origin name.
-				continue
+				if dns.CompareDomainName(name, qname[i:]) < level {
+					// we cannot trust that glue, it doesn't cover in the origin name.
+					continue
+				}
+
+				if _, ok := nss[name]; ok {
+					addr := getIPAddressFromScionTXT(extra)
+					if isLocalIP(addr) {
+						continue
+					}
+
+					if addr.IsLoopback() {
+						continue
+					}
+
+					foundv4[name] = struct{}{}
+
+					nsipv4[name] = append(nsipv4[name], addr.String())
+					authservers.List = append(authservers.List, authcache.NewAuthServer(net.JoinHostPort(addr.String(), "53"), authcache.IPv4))
+				}
 			}
+		} else {
+			if extra, ok := a.(*dns.A); ok {
+				name := strings.ToLower(extra.Header().Name)
+				qname := resp.Question[0].Name
 
-			if _, ok := nss[name]; ok {
-				if isLocalIP(extra.A) {
+				i, _ := dns.PrevLabel(qname, level)
+
+				if dns.CompareDomainName(name, qname[i:]) < level {
+					// we cannot trust that glue, it doesn't cover in the origin name.
 					continue
 				}
 
-				if extra.A.IsLoopback() {
-					continue
+				if _, ok := nss[name]; ok {
+					if isLocalIP(extra.A) {
+						continue
+					}
+
+					if extra.A.IsLoopback() {
+						continue
+					}
+
+					foundv4[name] = struct{}{}
+
+					nsipv4[name] = append(nsipv4[name], extra.A.String())
+					authservers.List = append(authservers.List, authcache.NewAuthServer(net.JoinHostPort(extra.A.String(), "53"), authcache.IPv4))
 				}
-
-				foundv4[name] = struct{}{}
-
-				nsipv4[name] = append(nsipv4[name], extra.A.String())
-				authservers.List = append(authservers.List, authcache.NewAuthServer(net.JoinHostPort(extra.A.String(), "53"), authcache.IPv4))
 			}
 		}
 	}

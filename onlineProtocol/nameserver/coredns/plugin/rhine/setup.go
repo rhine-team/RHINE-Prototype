@@ -16,12 +16,12 @@ import (
 func init() { plugin.Register("rhine", setup) }
 
 func setup(c *caddy.Controller) error {
-	zones, err := fileParse(c)
+	zones, scionEnabled, err := fileParse(c)
 	if err != nil {
 		return plugin.Error("file", err)
 	}
 
-	f := Rhine{Zones: zones}
+	f := Rhine{Zones: zones, scion: scionEnabled}
 	// get the transfer plugin, so we can send notifies and send notifies on startup as well.
 	c.OnStartup(func() error {
 		t := dnsserver.GetConfig(c).Handler("transfer")
@@ -67,8 +67,9 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func fileParse(c *caddy.Controller) (Zones, error) {
+func fileParse(c *caddy.Controller) (Zones, bool, error) {
 	z := make(map[string]*Zone)
+	scion := false
 	names := []string{}
 
 	config := dnsserver.GetConfig(c)
@@ -79,7 +80,7 @@ func fileParse(c *caddy.Controller) (Zones, error) {
 	for c.Next() {
 		// file db.file [zones...]
 		if !c.NextArg() {
-			return Zones{}, c.ArgErr()
+			return Zones{}, false, c.ArgErr()
 		}
 		fileName := c.Val()
 
@@ -99,7 +100,7 @@ func fileParse(c *caddy.Controller) (Zones, error) {
 				reader.Seek(0, 0)
 				zone, err := Parse(reader, origins[i], fileName, 0)
 				if err != nil {
-					return Zones{}, err
+					return Zones{}, false, err
 				}
 				z[origins[i]] = zone
 			}
@@ -109,21 +110,31 @@ func fileParse(c *caddy.Controller) (Zones, error) {
 		for c.NextBlock() {
 			switch c.Val() {
 			case "reload":
-				t := c.RemainingArgs()
-				if len(t) < 1 {
-					return Zones{}, errors.New("reload duration value is expected")
+				if !c.NextArg() {
+					return Zones{}, false, errors.New("reload duration value is expected")
 				}
-				d, err := time.ParseDuration(t[0])
+				t := c.Val()
+				d, err := time.ParseDuration(t)
 				if err != nil {
-					return Zones{}, plugin.Error("file", err)
+					return Zones{}, false, plugin.Error("file", err)
 				}
 				reload = d
+			case "scion":
+				t := c.RemainingArgs()
+				if len(t) < 1 {
+					return Zones{}, false, errors.New("scion option value is expected")
+				}
+				if t[0] == "on" {
+					scion = true
+				} else if t[0] == "off" {
+					scion = false
+				} else {
+					return Zones{}, false, c.Errf("unknown scion option: '%s'", t[0])
+				}
 			case "upstream":
 				// remove soon
-				c.RemainingArgs()
-
 			default:
-				return Zones{}, c.Errf("unknown property '%s'", c.Val())
+				return Zones{}, false, c.Errf("unknown property '%s'", c.Val())
 			}
 		}
 
@@ -136,10 +147,10 @@ func fileParse(c *caddy.Controller) (Zones, error) {
 	if openErr != nil {
 		if reload == 0 {
 			// reload hasn't been set make this a fatal error
-			return Zones{}, plugin.Error("file", openErr)
+			return Zones{}, false, plugin.Error("file", openErr)
 		}
 		log.Warningf("Failed to open %q: trying again in %s", openErr, reload)
 
 	}
-	return Zones{Z: z, Names: names}, nil
+	return Zones{Z: z, Names: names}, scion, nil
 }

@@ -255,12 +255,9 @@ func main() {
 		}
 		m.Extra = append(m.Extra, o)
 	}
-
-	// TODO(lou): this is temporary change, without this unpacking message fails
 	if *rhine {
-		setRo(m)
+		Size(m)
 	}
-
 	if *tcp {
 		co := new(dns.Conn)
 		tcp := "tcp"
@@ -333,7 +330,7 @@ func main() {
 				shortenMsg(r)
 			}
 			if *rhine {
-				if len(r.Answer) > 0 && r.Rcode == dns.RcodeSuccess {
+				if r.Rcode == dns.RcodeSuccess {
 					fmt.Printf("[RHINE] Checking rhine consistency\n")
 					if roa, _, ok := extractROAFromMsg(r); ok {
 						if !verifyRhineROA(roa, cert) {
@@ -406,7 +403,7 @@ Query:
 		case nil:
 			//do nothing
 		default:
-			fmt.Printf(";; %s\n", err.Error())
+			fmt.Printf(";; Redo: %s\n", err.Error())
 			continue
 		}
 		if r.Truncated {
@@ -446,7 +443,7 @@ Query:
 			shortenMsg(r)
 		}
 		if *rhine {
-			if len(r.Answer) > 0 && r.Rcode == dns.RcodeSuccess {
+			if r.Rcode == dns.RcodeSuccess {
 				fmt.Printf("[RHINE] Checking rhine consistency\n")
 				roa, _, ok := extractROAFromMsg(r)
 				if !ok {

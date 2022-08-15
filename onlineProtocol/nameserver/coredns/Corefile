@@ -1,17 +1,22 @@
 .:10000 {
     root ./zones
-    rhine root.db
+    rhine root.db . {
+        scion off
+    }
     log
 }
-
 com.:10001 {
     root ./zones
-    rhine com.db
+    rhine com.db com. {
+        scion off
+    }
     log
 }
 
 rhine-test.com.:10002 {
     root ./zones
-    rhine rhine-test.db
+    rhine rhine-test.db rhine-test.com. {
+        scion off
+    }
     log
 }

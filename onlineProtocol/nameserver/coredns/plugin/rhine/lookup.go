@@ -29,7 +29,7 @@ const (
 
 // Lookup looks up qname and qtype in the zone. When do is true DNSSEC records are included.
 // Three sets of records are returned, one for the answer, one for authority  and one for the additional section.
-func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) ([]dns.RR, []dns.RR, []dns.RR, Result) {
+func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string, scion bool) ([]dns.RR, []dns.RR, []dns.RR, Result) {
 	qtype := state.QType()
 	do := false
 	appendRRSIGs := true
@@ -50,7 +50,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 			return ap.soa(appendRRSIGs), ap.ns(appendRRSIGs), nil, Success
 		case dns.TypeNS:
 			nsrrs := ap.ns(appendRRSIGs)
-			glue := tr.Glue(nsrrs, appendRRSIGs) // technically this isn't glue
+			glue := tr.Glue(nsrrs, appendRRSIGs, scion) // technically this isn't glue
 			return nsrrs, nil, glue, Success
 		}
 	}
@@ -158,7 +158,7 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 				continue
 			}
 
-			glue := tr.Glue(nsrrs, appendRRSIGs)
+			glue := tr.Glue(nsrrs, appendRRSIGs, scion)
 			if appendRRSIGs {
 				dss := typeFromElem(elem, dns.TypeDS, appendRRSIGs)
 				nsrrs = append(nsrrs, dss...)
@@ -184,8 +184,6 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 		}
 
 		rrs := elem.Type(qtype)
-		// rhine: add txt records
-		//rrs = append(rrs, elem.Type(dns.TypeTXT)...)
 
 		// NODATA
 		if len(rrs) == 0 {
@@ -205,8 +203,10 @@ func (z *Zone) Lookup(ctx context.Context, state request.Request, qname string) 
 			sigs = rrutil.SubTypeSignature(sigs, qtype)
 			rrs = append(rrs, sigs...)
 		}
+		if qtype == dns.TypeDNSKEY {
+			additional = z.rhineDelegationProcessing(additional)
+		}
 		return rrs, ap.ns(appendRRSIGs), additional, Success
-
 	}
 
 	// Haven't found the original name.
@@ -441,23 +441,21 @@ func (z *Zone) rhineDelegationProcessing(rrs []dns.RR) []dns.RR {
 		apex = ""
 	}
 	if rcert, ok := tr.Search("_rhinecert." + apex); ok {
+		log.Info("Found RCert")
 		Rcert := rcert.Type(dns.TypeTXT)
 		rrs = append(rrs, Rcert...)
 	}
 	if rSig, ok := tr.Search("_dsp." + apex); ok {
+		log.Info("Found DSP")
 		RhineSig := rSig.Type(dns.TypeTXT)
 		rrs = append(rrs, RhineSig...)
 	}
-	if zoneAuth, ok := tr.Search(z.origin); ok {
-		rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
-
-		sigs := zoneAuth.Type(dns.TypeRRSIG)
-		sig := rrutil.SubTypeSignature(sigs, dns.TypeDNSKEY)
-		rrs = append(rrs, sig...)
-	}
-	//if _dnskey, ok := tr.Search("_rhinezsk." + z.origin); ok {
-	//	dnskey := _dnskey.Type(dns.TypeDNSKEY)
-	//	rrs = append(rrs, dnskey...)
+	//if zoneAuth, ok := tr.Search(z.origin); ok {
+	//	rrs = append(rrs, zoneAuth.Type(dns.TypeDNSKEY)...)
+	//
+	//	sigs := zoneAuth.Type(dns.TypeRRSIG)
+	//	sig := rrutil.SubTypeSignature(sigs, dns.TypeDNSKEY)
+	//	rrs = append(rrs, sig...)
 	//}
 
 	return rrs

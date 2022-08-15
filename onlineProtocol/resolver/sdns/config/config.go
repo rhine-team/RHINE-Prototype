@@ -55,6 +55,7 @@ type Config struct {
 	QnameMinLevel     int `toml:"qname_min_level"`
 	EmptyZones        []string
 	CACertificateFile string
+	SCION             bool
 	Plugins           map[string]Plugin
 
 	sVersion string
@@ -223,6 +224,8 @@ qname_min_level = 5
 emptyzones = []
 
 cacertificatefile = "./testdata/certificate/CACert.pem"
+
+scion = false
 
 # You can add your own plugins to sdns. The plugin order is very important. 
 # Plugins can be load before cache middleware.
