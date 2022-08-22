@@ -140,10 +140,12 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 			roa, ok := extractROAFromMsg(resp)
 			if !ok {
 				log.Info(errNoROA.Error())
+				break
 			}
 			if !verifyRhineROA(roa, h.cfg.CACertificateFile) {
 				log.Info("The ROA verify failed!")
 				//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
+				break
 			}
 			log.Info("The ROA verified")
 			signer := roa.dnskey.Hdr.Name
@@ -157,6 +159,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 			rrsigs := extractRRSet(rrs, "", dns.TypeRRSIG)
 			if len(rrsigs) == 0 {
 				log.Warn("No RRSIGs in the answer")
+				break
 			} else {
 				var RoA *ROA
 				signer := rrsigs[0].(*dns.RRSIG).SignerName
@@ -174,6 +177,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 						if !verifyRhineROA(RoA, h.cfg.CACertificateFile) {
 							log.Info("The ROA verify failed!")
 							//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
+							break
 						}
 						log.Info("The ROA verified")
 						h.roaCache.Add(hash(signer), RoA)
@@ -184,6 +188,7 @@ func (h *DNSHandler) handle(ctx context.Context, req *dns.Msg) *dns.Msg {
 				if !rhineRRSigCheck(resp, dnskey) {
 					log.Info("The verification of RRSIGs in response failed!")
 					//return dnsutil.SetRcode(req, dns.RcodeServerFailure, do)
+					break
 				}
 			}
 		}

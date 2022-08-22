@@ -19,6 +19,7 @@ var log = clog.NewWithPlugin("sign")
 // Signer holds the data needed to sign a zone file.
 type Signer struct {
 	keys        []Pair
+	rCertPair   *RCertPair
 	origin      string
 	dbfile      string
 	directory   string
@@ -41,7 +42,7 @@ func (s *Signer) Sign(now time.Time) (*file.Zone, error) {
 		return nil, err
 	}
 
-	mttl := z.Apex.SOA.Minttl
+	//mttl := z.Apex.SOA.Minttl
 	ttl := z.Apex.SOA.Header().Ttl
 	inception, expiration := lifetime(now, s.jitterIncep, s.jitterExpir)
 	z.Apex.SOA.Serial = uint32(now.Unix())
@@ -49,13 +50,18 @@ func (s *Signer) Sign(now time.Time) (*file.Zone, error) {
 	for _, pair := range s.keys {
 		pair.Public.Header().Ttl = ttl // set TTL on key so it matches the RRSIG.
 		z.Insert(pair.Public)
-		z.Insert(pair.Public.ToDS(dns.SHA1).ToCDS())
-		z.Insert(pair.Public.ToDS(dns.SHA256).ToCDS())
-		z.Insert(pair.Public.ToCDNSKEY())
+		//z.Insert(pair.Public.ToDS(dns.SHA1).ToCDS())
+		//z.Insert(pair.Public.ToDS(dns.SHA256).ToCDS())
+		//z.Insert(pair.Public.ToCDNSKEY())
+		sig, err := signZSK(pair.Public, s.rCertPair.Private, s.origin, ttl, inception, expiration)
+		if err != nil {
+			return nil, err
+		}
+		z.Insert(sig)
 	}
 
-	names := names(s.origin, z)
-	ln := len(names)
+	//names := names(s.origin, z)
+	//ln := len(names)
 
 	for _, pair := range s.keys {
 		rrsig, err := pair.signRRs([]dns.RR{z.Apex.SOA}, s.origin, ttl, inception, expiration)
@@ -80,18 +86,18 @@ func (s *Signer) Sign(now time.Time) (*file.Zone, error) {
 			return nil
 		}
 
-		if e.Name() == s.origin {
-			nsec := NSEC(e.Name(), names[(ln+i)%ln], mttl, append(e.Types(), dns.TypeNS, dns.TypeSOA, dns.TypeRRSIG, dns.TypeNSEC))
-			z.Insert(nsec)
-		} else {
-			nsec := NSEC(e.Name(), names[(ln+i)%ln], mttl, append(e.Types(), dns.TypeRRSIG, dns.TypeNSEC))
-			z.Insert(nsec)
-		}
+		//if e.Name() == s.origin {
+		//	nsec := NSEC(e.Name(), names[(ln+i)%ln], mttl, append(e.Types(), dns.TypeNS, dns.TypeSOA, dns.TypeRRSIG, dns.TypeNSEC))
+		//	z.Insert(nsec)
+		//} else {
+		//	nsec := NSEC(e.Name(), names[(ln+i)%ln], mttl, append(e.Types(), dns.TypeRRSIG, dns.TypeNSEC))
+		//	z.Insert(nsec)
+		//}
 
 		for t, rrs := range zrrs {
 			// RRSIGs are not signed and NS records are not signed because we are never authoratiative for them.
 			// The zone's apex nameservers records are not kept in this tree and are signed separately.
-			if t == dns.TypeRRSIG || t == dns.TypeNS {
+			if t == dns.TypeRRSIG || t == dns.TypeNS || t == dns.TypeDNSKEY {
 				continue
 			}
 			for _, pair := range s.keys {
@@ -105,6 +111,7 @@ func (s *Signer) Sign(now time.Time) (*file.Zone, error) {
 		i++
 		return nil
 	})
+	z.Insert(createCertRR(s.rCertPair.Rcert, s.origin))
 	return z, err
 }
 
