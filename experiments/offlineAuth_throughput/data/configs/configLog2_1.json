@@ -1,0 +1,21 @@
+{
+    "PrivateKeyAlgorithm": "RSA",
+    "PrivateKeyPath": "data/keys/Log1_RSA.pem",
+    "ServerAddress" : "localhost:50016",
+    "RootCertsPath" : "data/certs/roots/",
+    
+	"LogsName" :       ["localhost:50016", "localhost:50017"],
+    "LogsPubKeyPaths" :    ["data/keys/Log1_RSA_pub.pem", "data/keys/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050", "localhost:50051"],
+    "AggPubKeyPaths"  : ["data/keys/Agg1_pub.pem", "data/keys/Agg2_pub.pem"],
+    
+    "CAName" : "localhost:10001",
+    "CAServerAddr" : "localhost:10001",
+    "CACertificatePath" : "data/certs/roots/CACert.pem",
+    
+    "CTAddress": "localhost:6966",
+    "CTPrefix": "RHINE",
+    
+    "KeyValueDBDirectory" : "data/temp/databases/LoggerDTDatabase1"
+}

@@ -1,0 +1,42 @@
+name: Make Doc
+
+on:
+  schedule:
+    - cron: '22 10 * * 0'
+
+permissions: read-all
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
+
+      - name: Setup Go
+        uses: actions/setup-go@f6164bd8c8acb4a71fb2791a8b6c4024ff038dab
+        with:
+          go-version: '1.17.0'
+
+      - name: Update Docs
+        run: |
+          bash -x -e ./.github/fixup_file_mtime.sh
+          make -f Makefile.doc
+
+      - name: Set up Git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "coredns[bot]"
+          git config user.email "bot@bot.coredns.io"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git
+
+      - name: Commit and push changes
+        run: |
+          git add .
+          if output=$(git status --porcelain) && [ ! -z "$output" ]; then
+            git commit -s -m 'auto make -f Makefile.doc'
+            git push
+          fi

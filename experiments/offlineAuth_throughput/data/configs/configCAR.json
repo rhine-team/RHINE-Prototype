@@ -1,0 +1,13 @@
+{
+    "PrivateKeyAlgorithm": "Ed25519",
+    "PrivateKeyPath": "data/keys/CAKey.pem",
+    "CertificatePath": "data/certs/CACert.pem",
+    "ServerAddress" : "10.114.32.4:10001",
+    "RootCertsPath" : "data/certs/roots/",
+    
+	"LogsName" :       ["10.114.16.5:50016", "10.114.16.3:50017"],
+    "LogsPubKeyPaths" :    ["data/keys/Log1_RSA_pub.pem", "data/keys/Log2_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["10.114.32.3:50050", "10.114.32.6:50051"],
+    "AggPubKeyPaths"  : ["data/keys/Agg1_pub.pem", "data/keys/Agg2_pub.pem"]
+}

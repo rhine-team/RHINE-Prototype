@@ -1,0 +1,18 @@
+$TTL	604800
+@	IN	SOA	ns.rhine-ns.com root.rhine-ns.com (
+			      3		; Serial
+			 604800		; Refresh
+			  86400		; Retry
+			2419200		; Expire
+			 604800 )	; Negative Cache TTL
+;
+@	IN	NS	ns.rhine-ns.com.
+ns  IN  A   172.17.0.2
+www1	IN	A	127.0.0.1
+host1 IN  A    192.168.1.1
+host1 IN A     192.155.1.2
+_rhinecert.rhine-ns.com.        604800  IN      TXT     "rhineCert Ed25519 MIIBNTCB6KADAgECAgF7MAUGAytlcDAbMRkwFwYDVQQDExBSSElORSBFWEFNUExFIENBMB4XDTIyMDMxODE2MzAwMVoXDTIzMDMwOTE2MzAwMVowADAqMAUGAytlcAMhAFShzrZ9Q+RlS6bT9IIoseAAiAnv5Jc4/qEIE73B69rmo2wwajAOBgNVHQ8BAf8EBAMCB4AwDAYDVR0TAQH/BAIwADAfBgNVHSMEGDAWgBRdw" "kfb0TZ6BS5J2EkWjL+QlAOVzDAaBgNVHREBAf8EEDAOggxyaGluZS1ucy5jb20wDQYEK4N0CQQFMAMBAf8wBQYDK2VwA0EAqs9MBIDWsqtARSkotdC55fgLvcFwK7dthK1AX7OWSZa4ArPgvOLBQzcbDexD0Qeo3cOSIyDJOoompaN0uz9sAQ=="
+ns.rhine-ns.com.        604800  IN      TXT     "rhineSig A hJTGCmkdOCARUcG++5sehWHxUkTb9tMVpP7lVXZpLiMBkmevk1OeOPNUqOrn+gm5s3M+pU+Jf7Za/zLhVxhVBA=="
+www1.rhine-ns.com.      604800  IN      TXT     "rhineSig A DzprKqbtW0AMQ9prOJ7NuDgxBOgwPyPzfJYYuUcUAqrETumMY68CmaBdD4KwmqY3dyXeOU0bKqFAfrIz0+tNDA=="
+host1.rhine-ns.com.     604800  IN      TXT     "rhineSig A HYHmWaIR50M0T/e4uYcjepbuOVDfE0Y0WbykoG1wCuxgc6CylaBkpCTHPV2Cgskv2dfibIkGlrWsK7OxoaYUDw=="
+

@@ -1,0 +1,19 @@
+{
+    "PrivateKeyAlgorithm": "Ed25519",
+    "PrivateKeyPath": "data/parentKey2.pem",
+    "ZoneName":  "example.ethz.ch",
+    "CertificatePath": "data/parentCert2.pem",
+    "ServerAddress" : "localhost:10005",
+    
+    "LogsName" :       ["localhost:50016"],
+    "LogsPubKeyPaths" :    ["data/pubkeys/logs/Log1_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050"],
+    "AggPubKeyPaths"  : ["data/pubkeys/aggregators/Agg1_pub.pem"],
+    
+    "CAName" : "localhost:10000",
+    "CAServerAddr" : "localhost:10000",
+    "CACertificatePath" : "data/roots/CACert.pem",
+    
+    "ChildrenKeyDirectoryPath" : "data/pubkeys/children/"
+}

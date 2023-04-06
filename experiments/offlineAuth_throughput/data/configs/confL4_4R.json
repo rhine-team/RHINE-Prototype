@@ -1,0 +1,18 @@
+{
+    "PrivateKeyAlgorithm": "Ed25519",
+    "PrivateKeyPath": "data/keys/Agg1.pem",
+    "ServerAddress" : "localhost:50053",
+    "RootCertsPath" : "data/certs/roots/",
+    
+	"LogsName" :       ["localhost:50016", "localhost:50017"],
+    "LogsPubKeyPaths" :    ["data/keys/Log1_RSA_pub.pem", "data/keys/Log1_RSA_pub.pem"],
+    
+    "AggregatorName" :  ["localhost:50050", "localhost:50051", "localhost:50052", "localhost:50053"],
+    "AggPubKeyPaths"  : ["data/keys/Agg1_pub.pem", "data/keys/Agg1_pub.pem", "data/keys/Agg1_pub.pem", "data/keys/Agg1_pub.pem"],
+    
+    "CAName" : "localhost:10001",
+    "CAServerAddr" : "localhost:10001",
+    "CACertificatePath" : "data/certs/roots/CACert.pem",
+    
+    "KeyValueDBDirectory" : "data/temp/databases/AggregDatabase24"
+}
