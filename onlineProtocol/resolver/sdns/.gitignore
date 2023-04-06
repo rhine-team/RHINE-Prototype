@@ -1,9 +1,0 @@
-server.crt
-server.key
-sdns
-sdns.conf
-sdns_*
-coverage.out
-blist_data
-access.log
-vendor

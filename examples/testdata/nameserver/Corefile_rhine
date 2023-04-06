@@ -1,0 +1,8 @@
+rhine-test.com.:53 {
+    root ./zones
+    rhine rhine-test.db {
+        scion off
+    }
+    log
+}
+
