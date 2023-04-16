@@ -1,0 +1,1460 @@
+theory RHINE_Protocol_NSDI23_Revision
+
+begin
+
+functions: zone/1, name/1, epoch/1
+builtins:  hashing, signing, multiset
+
+/*
+  Restrictions to model local processing (verification of signature and consistency between data objects, etc.) and to limit state space
+*/
+
+restriction Equality:
+  "All x y #i. Eq(x, y)@i ==> x = y"
+
+restriction Inequality:
+  "(not Ex x #i. NotEq(x,x)@i)"
+
+restriction OnlyOnce:
+  "All x #i #j. OnlyOnce(x)@#i & OnlyOnce(x)@#j ==> #i = #j"
+
+restriction TypesDistinct:
+  "(All type1 type2 A #i #j. (IsType(type1,A)@i & IsType(type2,A)@j) ==> (type1 = type2))"
+
+restriction SingleKeyPerName:
+  "(All A ltk1 ltk2 #i #j. (KeyGen(A,ltk1)@i & KeyGen(A,ltk2)@j ==> (#i = #j)))"
+
+/* 
+   EE-PKI 
+   We distinguish between the keys for PKI authorities (CA, loggers) and the keys for DNS authorities/zone owners certified by RCerts
+*/
+
+// For CA only
+rule Register_Pk:
+    [ Fr(~ltk) ]
+  --[
+      KeyGen($A, ~ltk)
+    ]->
+    [ 
+      !Pk($A, pk(~ltk))
+    , !Sk($A, ~ltk)
+    , Out(pk(~ltk)) 
+    ]
+
+/* Compromise Rules */
+
+rule Compromise:
+    [ !Sk($A, ~ltk) ] --[ Compromised($A) ]-> [ Out(~ltk) ]
+
+// TODO: generalize this to any zone?
+rule Compromise_Zone_P:
+    [ !ZSk_P($P, ~zskP) ] --[ Compromised($P) ]-> [ Out(~zskP) ]
+
+/**
+    DT initialization with five loggers
+**/
+
+rule DT_Global_Init_Log:
+    [
+      ParentToDT(dsum_P) // No need to expand as this fact is a singleton anyway
+    ]
+  --[
+      OnlyOnce('DT_Global_Init_Log')
+    ]->
+    [
+      !DTLog(epoch('T0'), dsum_P + 'nil')
+    // Allow only one delegation per epoch in normal situations
+    , AggregationQuota(epoch('T0'))
+    ]
+
+/**
+=========Secure Delegation Setup Protocol=========
+**/
+
+/* 
+   Delegation Setup: Step 0 
+*/
+
+// Parent must exist for everything to take place ...
+rule Parent_Init:
+    let
+      // Initialize the parent zone's RoA, which is supposed to be established when the parent zone itself is securely delegated
+      // Note that we use the parent zone's RCert only for name resolution but not for the secure delegation to child (which directly use the parent zone's public zone key). This simplifies the model a lot without affecting correctness, because Parent is modeled as a singleton anyway.
+      tbsP = <'TBSCert', zone('Parent'), $P, pk(~zskP), $CA>
+      rcP_data = <tbsP, $L1, $L2>
+      rcP = <'RCert', rcP_data, sign(rcP_data, ~skCA)>
+      dsum_P = <'DSum', zone('Parent'), h(tbsP), <'Delegations', zone('nil'), zone('nil')>> // modeling trick: the delegation set always contains two (dummy) elements
+    in
+    [ 
+      Fr(~zskP) // key for the Parent RCert
+    // The CA and loggers maybe the same as what will be chosen by Child. The use of different notations here are for nominal disambiguation only. 
+    // Non-deterministically choose the CA and loggers, taking the shortcut of using the private key of the CA to simplify the model
+    , !Sk($CA, ~skCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[ 
+      OnlyOnce('Parent_Init') 
+    , IsType('Role_Zone', $P), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , ParentZoneInitialized(zone('Parent'), $P, ~zskP, $CA, $L1, $L2)
+    ]->
+    [ 
+      !ZSk_P($P, ~zskP)
+    , !ZPk_P($P, pk(~zskP))
+    , !P_St_0($P, ~zskP, rcP)
+    , ParentToDT(dsum_P)
+    , ZonePublishable(epoch('T0'), zone('Parent'), $P, ~zskP, rcP)
+    , ZonePublishable(epoch('T1'), zone('Parent'), $P, ~zskP, rcP)
+    , ZonePublishable(epoch('T2'), zone('Parent'), $P, ~zskP, rcP)
+    ]
+
+// These rules model the possibility of requesting delegation arbitrary zone at arbitrary time
+rule Child_Init:
+    [ 
+      Fr(~zskC)
+    ]
+  --[ 
+      OnlyOnce(<'Child_Init', ~zskC>)
+    , IsType('Role_Zone', $C)
+    , ChildInitialized('Child_Init', $C)
+    , KeyGen($C, ~zskC) // restrict one key per child
+    ]->
+    [
+      !ZSk_C($C, ~zskC) 
+    , ChildInitSelector($C, ~zskC)
+    ]
+
+// No limit on the number of instantiated child zones
+rule Child_Init_Select_T0_X:
+    [ 
+      ChildInitSelector($C, ~zskC)
+    ]
+  --[]->
+    [
+      C_St_0(epoch('T0'), zone('ChildX'), $C, ~zskC)
+    , ChildKeyToRegister(epoch('T0'), zone('ChildX'), $C, pk(~zskC)) // out-of-band secure channel that cannot be accessed by the adversary
+    ]
+
+// to model malicious attempt to ask for cert of an existing zone
+rule Child_Init_Select_T1_X:
+    [ 
+      ChildInitSelector($C, ~zskC)
+    ]
+  --[OnlyOnce('Child_Init_Select_T1_X')]->
+    [
+      C_St_0(epoch('T1'), zone('ChildX'), $C, ~zskC)
+    , ChildKeyToRegister(epoch('T1'), zone('ChildX'), $C, pk(~zskC)) // out-of-band secure channel that cannot be accessed by the adversary
+    ]
+
+rule Child_Init_Select_T1_Y:
+    [ 
+      ChildInitSelector($C, ~zskC)
+    ]
+  --[OnlyOnce('Child_Init_Select_T1_Y')]->
+    [
+      C_St_0(epoch('T1'), zone('ChildY'), $C, ~zskC)
+    , ChildKeyToRegister(epoch('T1'), zone('ChildY'), $C, pk(~zskC)) // out-of-band secure channel that cannot be accessed by the adversary
+    ]
+
+rule Parent_ChildRegister:
+    [
+      !P_St_0($P, ~zskP, rcP)
+    , ChildKeyToRegister(epoch, zone, $C, zpkC)
+    ]
+  --[ 
+      OnlyOnce(<'Child_Key_Registered', zone>) // Only allow a single genuine key for one child zone to be ever registered
+    , ChildKeyRegistered(epoch, zone, $P, $C, zpkC)
+    ]->
+    [
+      P_St_1(epoch, $P, ~zskP, rcP, $C, zpkC)
+    ]
+
+/* 
+   Delegation Setup: Step 1-2 
+*/
+
+// The adversary can forge sdr with a compromised ~zskC that is different from what is registered at Parent, 
+// and attempt to run the rest of the delegation setup protocol with other entities (which should fail)
+rule Child_Submit_SDR:
+  let
+    /* Output */
+    // Omit rid in messages 
+    sdr_data = <'SDReq', epoch, zone, $C, pk(~zskC), $P, $CA, $L1, $L2>
+    sdr = <sdr_data, sign(sdr_data, ~zskC)>
+  in
+    [ 
+      C_St_0(epoch, zone, $C, ~zskC)
+    , !ZPk_P($P, zpkP)
+    // *non-deterministically* choose CA and Loggers
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[ 
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    // , SDRSubmitted($C, zone, pk(~zskC))
+    ]->
+    [ 
+      C_St_1($C, ~zskC, zpkP, sdr)
+    , Out(<$C, $P, sdr>)
+    ]
+
+/* 
+   Delegation Setup: Step 3-4
+*/
+
+// The adversary can forge apv if it has compromised the parent zone
+rule Parent_Approve_SDR:
+    let
+      /* Input */
+      // unfold sdr_data to allow matching of the registered child zone (zpkC in particular) info (in P_St_1) with the received
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2>
+      // unfold sdr to allow explicit signature verification
+      sdr = <sdr_data, sdr_sig>
+      /* Output */
+      apv = sign(<'SDApproval', h(sdr)>, ~zskP)
+    in
+    [ 
+      In(<$C, $P, sdr>)
+    , P_St_1(epoch, $P, ~zskP, rcP, $C, zpkC)
+    ]
+  --[
+      Eq(verify(sdr_sig, sdr_data, zpkC), true)
+    , IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , SDApproved(epoch, zone, $P, $C, zpkC, $CA, $L1, $L2)
+    // , OnlyOnce(<'Parent_Approve_SDR'>)
+    ]->
+    [ 
+      P_St_2($P, ~zskP)
+    , Out(<$P, $C, apv, rcP>) // Parent rcP
+    ]
+
+/* 
+   Delegation Setup: Step 5-6
+*/
+
+rule Child_Send_Approved_SDR:
+    let
+      /* Local */
+      // unfold sdr_data to allow consistency checking
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2>
+      sdr = <sdr_data, sdr_sig>
+    in
+    [ 
+      C_St_1($C, ~zskC, zpkP, sdr)
+    , In(<$P, $C, apv, rcP>)
+    ]
+  --[
+      // Skip the checking allows the child zone to proceed with an arbitrary approval.
+      // This captures a malicious child that requests RCert without a valid approval.
+      // Eq(verify(apv, <'SDApproval', h(sdr)>, zpkP), true) // apv itself is a signature
+      ChildRCertRequested(epoch, zone, $P, $C, ~zskC, $CA, $L1, $L2)
+    ]->
+    [ 
+      C_St_2($C, ~zskC, sdr)
+    ]
+
+/* 
+   Delegation Setup: Step 7-8
+*/
+
+rule CA_Init:
+    [ 
+      !Sk($CA, ~skCA)
+    ]
+  --[
+      OnlyOnce(<'CA_Init', ~skCA>)
+    , IsType('Role_CA', $CA)
+    ]->
+    [
+      // Allow the CA to persist once initialized
+      !CA_St_0($CA, ~skCA)
+    ]
+
+rule CA_Preissuance_1:
+    let
+      /* Input */
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2> // no restriction on epoch
+      sdr = <sdr_data, sdr_sig>
+    in
+    [ 
+      // Not yet unfolding rcP.
+      In(<$C, $CA, sdr, apv, rcP>)
+    , !CA_St_0($CA, ~skCA)
+    // Recall that Parent is a singleton and must be the one contained in sdr_data and rcP, so we don't have to expand rcP for consistency check
+    , !ZPk_P($P, zpkP)
+    , Fr(~dsrid)
+    ]
+  --[
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_Zone', $C), IsType('Role_Zone', $P), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , Eq(verify(apv, <'SDApproval', h(sdr)>, zpkP), true)
+    , Eq(verify(sdr_sig, sdr_data, zpkC), true)
+    , SDRReceived(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Preissuance_1', epoch>) // restrict once per epoch to limit state space
+    ]->
+    [
+      CA_St_1($CA, ~skCA, sdr, apv, rcP, ~dsrid, epoch)
+    , DSPReq(~dsrid, epoch, $CA, zone('Parent'), $L1, $L2) // out-of-band channel
+    ]
+
+rule CA_Preissuance_2:
+    let
+      /* Local */
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2>
+      sdr = <sdr_data, sdr_sig>
+      // unfold rcP to allow checking of dsum_P (with tbsP in particular)
+      rcP = <'RCert', <tbsP, $L1_P, $L2_P>, rcP_sig> // note that we have to distinguish the loggers of the parent and those of the child
+      /* Input */
+      // unfold to match epoch
+      dsum_P = <'DSum', zone('Parent'), htbsP, <'Delegations', dlgt1, dlgt2>>
+      dsp_P = <'DSP', epoch, dsum_P, dsp_sig1, dsp_sig2>
+      /* Output */
+      tbsrc = <'TBSCert', zone, $C, zpkC, $CA>
+      prl_data = <'PreLog', sdr, apv, tbsrc>
+      prl = <prl_data, sign(prl_data, ~skCA)>
+    in
+    [ 
+      DSPResp(~dsrid, $L1, $L2, $CA, dsp_P) // out-of-band channel
+    , CA_St_1($CA, ~skCA, sdr, apv, rcP, ~dsrid, epoch)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+    // Note the it is the loggers specified by the Child that should provide the proofs
+      Eq(verify(dsp_sig1, <dsum_P, epoch>, pkL1), true) 
+    , Eq(verify(dsp_sig2, <dsum_P, epoch>, pkL2), true)
+    , Eq(htbsP, h(tbsP))
+    // check the delegation's legitimacy
+    , NotEq(dlgt1, zone)
+    , NotEq(dlgt2, zone) 
+    , CAPreissued(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Preissuance_2', epoch>)
+    ]->
+    [ 
+      CA_St_2($CA, ~skCA, sdr, tbsrc) // remember only sdr and tbsrc, instead of prl specified in the protocol, for simplicity
+    // send the request to all designated Loggers
+    , Out(<$CA, $L1, $L2, prl>) //, Out(<$CA, $L1, $L2, prl, rcP>)
+    ]
+
+/* 
+   Delegation Setup: Step 9-10
+*/
+
+rule Logger_Init:
+    [ 
+      !Sk($L, ~skL)
+    ]
+  --[
+      OnlyOnce(<'Logger_Init', ~skL>)
+    , IsType('Role_Logger', $L)
+    // , KeyGen($L, ~skL)
+    ]->
+    [
+      // Allow the logger to persist once initialized
+      !L_St_0($L, ~skL)
+    ]
+
+// Merge the identical processing of loggers into a single rule. This reduces state space without affecting security analysis.
+rule Logger_Attest:
+    let
+      /* Local */
+      dsum_P = <'DSum', zone('Parent'), hrcp, <'Delegations', dlgt1, dlgt2>> // can also expand hrcp, dlgts for implicit checking
+      /* Input */
+      rcP = <'RCert', <tbsP, $L1_P, $L2_P>, rcP_sig>
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2> // expand to allow check if the tbs cert matches the requested, and if the logger is desigated
+      sdr = <sdr_data, sdr_sig>
+      tbsrc = <'TBSCert', zone, $C, zpkC, $CA>
+      prl_data = <'PreLog', sdr, apv, tbsrc>
+      prl = <prl_data, prl_sig>
+      /* Output */
+      // including the epoch to allow selecting the right DT log snapshot in the aggregation rule (note that the epoch is not explicitly specified in the protocol)
+      nds = <epoch, $CA, $L1, $L2, zone, h(tbsrc)>
+      att1 = sign(<'LogAttest', h($L1, nds)>, ~skL1)
+      att2 = sign(<'LogAttest', h($L2, nds)>, ~skL2)
+    in
+    [ 
+      In(<$CA, $L1, $L2, prl, rcP>)
+    , !L_St_0($L1, ~skL1)
+    , !L_St_0($L2, ~skL2)
+    , !DTLog(epoch, dsum_P + rest)
+    , !ZPk_P($P, zpkP) 
+    , !Pk($CA, pkCA)
+    ]
+  --[
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_Zone', $C), IsType('Role_Zone', $P), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    // check pre-logging request
+    , Eq(verify(prl_sig, prl_data, pkCA), true)
+    // check secure delegation request from Child
+    , Eq(verify(apv, <'SDApproval', h(sdr)>, zpkP), true)
+    , Eq(verify(sdr_sig, sdr_data, zpkC), true)
+    // check the delegation's legitimacy using local log
+    , Eq(hrcp, h(tbsP))
+    , NotEq(dlgt1, zone)
+    , NotEq(dlgt2, zone) 
+    , LoggerAttested(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'Logger_Attest', epoch>)
+    ]->
+    [
+      LOG_St_1($L1, ~skL1, $CA, nds)
+    , LOG_St_1($L2, ~skL2, $CA, nds)
+    , Out(<$L1, $L2, $CA, att1, att2>)
+    ]
+
+/* 
+   Delegation Setup: Step 11-12
+*/
+
+rule CA_Request_Logging:
+    let
+      /* Local */
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2>
+      sdr = <sdr_data, sdr_sig>
+      nds = <epoch, $CA, $L1, $L2, zone, h(tbsrc)> // constructed from local state
+      /* Output */
+      lreq_data = <'DTAdd', $L1, nds, att1, att2> // choose $L1 to apply the request later
+      lreq = <lreq_data, sign(lreq_data, ~skCA)>
+    in
+    [ 
+      In(<$L1, $L2, $CA, att1, att2>)
+    , CA_St_2($CA, ~skCA, sdr, tbsrc)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      Eq(verify(att1, <'LogAttest', h($L1, nds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttest', h($L2, nds)>, pkL2), true)
+    , PreloggingDone(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Request_Logging', epoch>)
+    ]->
+    [ 
+      CA_St_3($CA, ~skCA, tbsrc, nds, lreq, att1, att2) 
+      // Not sending rcP as in the protocol spec, because we directly use zpkP to verify asdr
+    , Out(<$CA, $L1, lreq>) // att1, att2 are sent redundantly but we cannot remove them because they have to be signed
+    ]
+
+/* 
+   Delegation Setup: Step 13-14
+*/
+
+rule Logger_Confirm:
+    let
+      /* Local */
+      nds = <epoch, $CA, $L1, $L2, zone, htbs>
+      /* Input */
+      lreq_data = <'DTAdd', $L1, nds, att1, att2> // unfold to match $L
+      lreq = <lreq_data, lreq_sig>
+      /* Output */
+      lcfm_data = <'LogCfm', $L1, h(nds)>
+      lcfm = <lcfm_data, sign(lcfm_data, ~skL1)>
+    in
+    [
+      In(<$CA, $L1, lreq>)
+    , LOG_St_1($L1, ~skL1, $CA, nds)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      // Eq(pk(~skL1), pkL1) // unnecessary
+      Eq(verify(lreq_sig, lreq_data, pkCA), true)
+    , Eq(verify(att1, <'LogAttest', h($L1, nds)>, pkL1), true) // TODO: self checking?
+    , Eq(verify(att2, <'LogAttest', h($L2, nds)>, pkL2), true)
+    , LogConfirmed(epoch, $P, $C, $CA, $L1, $L2)
+    , OnlyOnce(<'Logger_Confirm', epoch>)
+    ]->
+    [
+      // Only one logger should continue from here on
+      Out(<$L1, $CA, lcfm>)
+    ]
+
+/* 
+   Delegation Setup: Step 15-16
+*/
+
+rule CA_Issuance:
+    let
+      /* Local */
+      tbsrc = <'TBSCert', zone, $C, zpkC, $CA> // unfold to get $C
+      nds = <epoch, $CA, $L1, $L2, zone, htbs> // unfold to get the logger list
+      /* Input */
+      lcfm_data = <'LogCfm', $L1, hnds>
+      lcfm = <lcfm_data, lcfm_sig>
+      /* Output */
+      rcert_data = <tbsrc, $L1, $L2>
+      rcert = <'RCert', rcert_data, sign(rcert_data, ~skCA)>
+    in
+    [
+      In(<$L1, $CA, lcfm>)
+    , CA_St_3($CA, ~skCA, tbsrc, nds, lreq, att1, att2)
+    , !Pk($L1, pkL1)
+    ]
+  --[
+      Eq(verify(lcfm_sig, lcfm_data, pkL1), true)
+    , Eq(h(nds), hnds)
+    , CAIssued(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Issuance', epoch>)
+    ]->
+    [
+      Out(<$CA, $C, rcert>) // Out(<$CA, $C, rcert, att1, att2, lcfm>)
+    ]
+
+/* 
+  Delegation Setup: Step 17
+*/
+
+rule Child_Accept:
+    let
+      /* Local */
+      // unfold sdr_data to allow consistency checking
+      sdr_data = <'SDReq', epoch, zone, $C, zpkC, $P, $CA, $L1, $L2>
+      sdr = <sdr_data, sdr_sig>
+      /* Input */
+      tbsrc = <'TBSCert', zone, $C, zpkC, $CA>
+      rcert_data = <tbsrc, $L1, $L2>
+      rcert = <'RCert', rcert_data, rcert_sig>
+      lcfm_data = <'LogCfm', $L1, hnds>
+      lcfm = <lcfm_data, lcfm_sig>
+      // Constructed from local state except the last hash of the tbsrc
+      nds = <epoch, $CA, $L1, $L2, zone, h(tbsrc)>
+    in
+    [
+      C_St_2($C, ~zskC, sdr)
+    , In(<$CA, $C, rcert, att1, att2, lcfm>)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    // This models the monitoring during the distribution window
+    , DTMonitor(epoch, 'Setup', logged_htbs)
+    ]
+  --[
+    // the cert is issued by the designated CA
+      Eq(verify(rcert_sig, rcert_data, pkCA), true)
+    // the request is attested by the designated loggers
+    , Eq(verify(att1, <'LogAttest', h($L1, nds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttest', h($L2, nds)>, pkL2), true)
+    // the logging operation is further confirmed by a logger
+    , Eq(verify(lcfm_sig, lcfm_data, pkL1), true)
+    , Eq(h(nds), hnds)
+    // the monitored log entry is correct
+    , Eq(h(tbsrc), logged_htbs)
+    , ChildZoneDelegated(epoch, zone, $P, $C, ~zskC, $CA, $L1, $L2)
+    , OnlyOnce(<'Child_Accept', epoch>)
+    ]->
+    [
+      ZonePublishableSelector(epoch, zone, $C, ~zskC, rcert)
+    ]
+
+rule ChildZonePublishableSelect_T0: 
+  [ ZonePublishableSelector(epoch('T0'), zone, $C, ~zskC, rcert) ] 
+  --[]-> 
+  [ ZonePublishable(epoch('T1'), zone, $C, ~zskC, rcert)
+  , ZonePublishable(epoch('T2'), zone, $C, ~zskC, rcert) ]
+
+rule ChildZonePublishableSelect_T1: 
+  [ ZonePublishableSelector(epoch('T1'), zone, $C, ~zskC, rcert) ] 
+  --[]-> 
+  [ ZonePublishable(epoch('T2'), zone, $C, ~zskC, rcert) ]
+
+/**
+=========Secure Delegation Update Protocol=========
+RHINE supports various forms of update. 
+In the current model we consider only updating the child RCert's key 
+within the delegation's validity period, possibly with different CA and loggers.
+**/
+
+// This rule captures the scenario that an attacker (in the role of a child zone) 
+// uses an alternative (fake) RCert to initiate the update protocol
+rule Fake_RCert:
+    let
+      /* Output */
+      tbsrc = <'TBSCert', zone('ChildX'), $C, pk(~zskC), $CA>
+      rcert_data = <tbsrc, $L1, $L2> // non-deterministically choose the loggers
+      rcert = <'RCert', rcert_data, sign(rcert_data, ~skCA)>
+    in
+    [
+      !ZSk_C($C, ~zskC)
+    // Use the private key of some (compromised) CA to sign the fake RCert
+    , !Sk($CA, ~skCA)
+    ]
+  --[
+      OnlyOnce(<'Fake_RCert'>)
+    , IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    ]->
+    [
+      ChildRCertBeforeUpdate(rcert)
+    , Out(rcert) // publish the fake RCert
+    ]
+
+/* 
+   Delegation Update: Step 0-2
+*/
+rule Child_Prep_Send_Update:
+    let
+      /* Input */
+      rcert_data_Old = <<'TBSCert', zone('ChildX'), $C, pk(~zskC_Old), $CA_Old>, $L1_Old, $L2_Old>
+      rcC_Old = <'RCert', rcert_data_Old, rcert_sig_Old>
+      /* Output */
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), pk(~zskC_New), $CA, $L1, $L2>
+      sur = <sur_data, sign(sur_data, ~zskC_Old)>
+    in
+    [ 
+      !ZSk_C($C, ~zskC_Old) // used to sign the secure update request
+    // Modeling trick to incorporate both legit and malicious update attempt
+    // rcC_Old can come from either legit delegation or be a fake one
+    , ChildRCertBeforeUpdate(rcC_Old)
+    // The new key to change
+    , Fr(~zskC_New)
+    // Select a possibly new set of trusted entities
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[ 
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , UpdateRequested(epoch('T1'), zone('ChildX'), $C, ~zskC_Old, ~zskC_New, $CA, $L1, $L2)
+    , OnlyOnce(<'Child_Prep_Send_Update'>)
+    ]->
+    [
+      C_Upd_1($C, ~zskC_Old, ~zskC_New, sur)
+    , Out(<$C, $CA, sur>) // , Out(<$C, $CA, sur, rcC_Old>) // the old cert is already published 
+    ]
+
+/* 
+   Delegation Update: Step 3-4
+*/
+rule CA_Verify_Update_1:
+    let
+      /* Input */
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), zpkC_New, $CA, $L1, $L2>
+      sur = <sur_data, sur_sig>
+      // expand to allow the verification of rcert with $CA_Old's public key and sur with zpkC_Old
+      tbsrc = <'TBSCert', zone('ChildX'), $C, zpkC_Old, $CA_Old>
+      rcert_data = <tbsrc, $L1_Old, $L2_Old>
+      rcert = <'RCert', rcert_data, rcert_sig>
+    in
+    [ 
+      In(<$C, $CA, sur, rcert>)
+    , !CA_St_0($CA, ~skCA)
+    , !Pk($CA_Old, pkCA_Old)
+    , Fr(~dsrid)
+    ]
+  --[
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_Zone', $C), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , Eq(verify(rcert_sig, rcert_data, pkCA_Old), true) // verify RCert
+    , Eq(verify(sur_sig, sur_data, zpkC_Old), true) // verify update request
+    // , SURReceived(epoch('T1'), $C, zpkC, zpkC_New, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Verify_Update_1'>)
+    ]->
+    [
+      CA_Update_1($CA, ~skCA, sur, rcert, ~dsrid)
+    , DSPReq(~dsrid, epoch('T1'), $CA, zone('ChildX'), $L1, $L2) // contact the new loggers specified by the child
+    ]
+
+rule CA_Verify_Update_2:
+    let
+      /* Local */
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), zpkC_New, $CA, $L1, $L2>
+      sur = <sur_data, sur_sig>
+      tbsrc_Old = <'TBSCert', zone('ChildX'), $C, zpkC_Old, $CA_Old>
+      rcert_data = <tbsrc_Old, $L1_Old, $L2_Old>
+      rcC_Old = <'RCert', rcert_data, rcert_sig>
+      /* Input */
+      dsum_C = <'DSum', zone('ChildX'), htbsC, <'Delegations', zone('nil'), zone('nil')>>
+      dsp_C = <'DSP', epoch('T1'), dsum_C, dsp_sig1, dsp_sig2>
+      /* Output */
+      tbs_New = <'TBSCert', zone('ChildX'), $C, zpkC_New, $CA>
+      prl_data = <'PreLogUpdate', sur, tbs_New> // differentiate the update request from setup requests to reduce state space
+      prl = <prl_data, sign(prl_data, ~skCA)>
+    in
+    [ 
+      DSPResp(~dsrid, $L1, $L2, $CA, dsp_C) // out-of-band channel
+    , CA_Update_1($CA, ~skCA, sur, rcC_Old, ~dsrid)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[ // verify that tbsC_Old is genuine w.r.t. to the log
+      Eq(verify(dsp_sig1, <dsum_C, epoch('T1')>, pkL1), true) 
+    , Eq(verify(dsp_sig2, <dsum_C, epoch('T1')>, pkL2), true)
+    , Eq(htbsC, h(tbsrc_Old))
+    , OnlyOnce(<'CA_Verify_Update_2'>)
+    ]->
+    [ 
+      CA_Update_2($CA, ~skCA, sur, tbs_New)
+    // send the request to all designated Loggers
+    , Out(<$CA, $L1, $L2, prl>) // , Out(<$CA, $L1, $L2, prl, rcC_Old>)
+    ]
+
+/* 
+   Delegation Update: Step 5-6
+*/
+rule Logger_Attest_Update:
+    let
+      /* Local */
+      dsum_C = <'DSum', zone('ChildX'), htbs, <'Delegations', zone('nil'), zone('nil')>>
+      /* Input */
+      tbs_Old = <'TBSCert', zone('ChildX'), $C, zpkC_Old, $CA_Old>
+      rcert_data = <tbs_Old, $L1_Old, $L2_Old>
+      rcC_Old = <'RCert', rcert_data, rcert_sig>
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), zpkC_New, $CA, $L1, $L2>
+      sur = <sur_data, sur_sig>
+      prl_data = <'PreLogUpdate', sur, tbs_New>
+      prl = <prl_data, prl_sig>
+      /* Output */
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), h(tbs_New)>
+      att1 = sign(<'LogAttestUpdate', h($L1, uds)>, ~skL1)
+      att2 = sign(<'LogAttestUpdate', h($L2, uds)>, ~skL2)
+    in
+    [ 
+      In(<$CA, $L1, $L2, prl, rcC_Old>)
+    , !L_St_0($L1, ~skL1)
+    , !L_St_0($L2, ~skL2)
+    , !DTLog(epoch, dsum_C + rest)
+    , !Pk($CA, pkCA)
+    , !Pk($CA_Old, pkCA_Old)
+    ]
+  --[
+      NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , IsType('Role_Zone', $C), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    // check pre-logging request
+    , Eq(verify(prl_sig, prl_data, pkCA), true)
+    // check secure delegation update request from Child
+    , Eq(verify(sur_sig, sur_data, zpkC_Old), true)
+    // check the old child RCert's validity with the log
+    , Eq(verify(rcert_data, rcert_sig, pkCA_Old), true) // no need to check CA's signature
+    , Eq(htbs, h(tbs_Old))
+    , OnlyOnce(<'Logger_Attest_Update'>)
+    ]->
+    [
+      L_Update_1($L1, ~skL1, $CA, uds)
+    , L_Update_1($L2, ~skL2, $CA, uds)
+    , Out(<$L1, $L2, $CA, att1, att2>)
+    ]
+
+/* 
+   Delegation Update: Step 7-8
+*/
+rule CA_Request_Update_Logging:
+    let
+      /* Local */
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), zpkC_New, $CA, $L1, $L2>
+      sur = <sur_data, sur_sig>
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), h(tbs_New)> // constructed from local state
+      /* Output */
+      lreq_data = <'DTUpdate', $L1, uds, att1, att2> // choose $L1 to apply the request later
+      lreq = <lreq_data, sign(lreq_data, ~skCA)>
+    in
+    [ 
+      In(<$L1, $L2, $CA, att1, att2>)
+    , CA_Update_2($CA, ~skCA, sur, tbs_New)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      Eq(verify(att1, <'LogAttestUpdate', h($L1, uds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttestUpdate', h($L2, uds)>, pkL2), true)
+    // , PreloggingDone(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Request_Update_Logging'>)
+    ]->
+    [ 
+      CA_Update_3($CA, ~skCA, tbs_New, uds, lreq, att1, att2) 
+      // Not sending rcP as in the protocol spec, because we directly use zpkP to verify asdr
+    , Out(<$CA, $L1, lreq>)
+    ]
+
+/* 
+   Delegation Update: Step 9-10
+*/
+rule Logger_Confirm_Update:
+    let
+      /* Local */
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), htbs_New>
+      /* Input */
+      lreq_data = <'DTUpdate', $L1, uds, att1, att2> // unfold to match $L
+      lreq = <lreq_data, lreq_sig>
+      /* Output */
+      lcfm_data = <'LogCfmUpdate', $L1, h(uds)>
+      lcfm = <lcfm_data, sign(lcfm_data, ~skL1)>
+    in
+    [
+      In(<$CA, $L1, lreq>)
+    , L_Update_1($L1, ~skL1, $CA, uds)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      Eq(verify(lreq_sig, lreq_data, pkCA), true)
+    , Eq(verify(att1, <'LogAttestUpdate', h($L1, uds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttestUpdate', h($L2, uds)>, pkL2), true)
+    // , LogConfirmed(epoch, $P, $C, $CA, $L1, $L2)
+    , OnlyOnce(<'Logger_Confirm_Update'>)
+    ]->
+    [
+      // Only one logger should continue from here on
+      Out(<$L1, $CA, lcfm>)
+    ]
+
+/* 
+   Delegation Update: Step 11-12
+*/
+rule CA_Issuance_Update:
+    let
+      /* Local */
+      tbsrc_New = <'TBSCert', zone('ChildX'), $C, zpkC_New, $CA> // unfold to get $C
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), htbsrc_New> // unfold to get the logger list
+      /* Input */
+      lcfm_data = <'LogCfmUpdate', $L1, huds>
+      lcfm = <lcfm_data, lcfm_sig>
+      /* Output */
+      rcert_data = <tbsrc_New, $L1, $L2>
+      rcert = <'RCert', rcert_data, sign(rcert_data, ~skCA)>
+    in
+    [
+      In(<$L1, $CA, lcfm>)
+    , CA_Update_3($CA, ~skCA, tbsrc_New, uds, lreq, att1, att2) 
+    , !Pk($L1, pkL1)
+    ]
+  --[
+      Eq(verify(lcfm_sig, lcfm_data, pkL1), true)
+    , Eq(h(uds), huds)
+    // , CAIssued(epoch, $P, $C, zpkC, $CA, $L1, $L2)
+    , OnlyOnce(<'CA_Issuance_Update'>)
+    ]->
+    [
+      Out(<$CA, $C, rcert>) // Out(<$CA, $C, rcert, att1, att2, lcfm>)
+    ]
+
+/* 
+   Delegation Update: Step 13
+*/
+rule Child_Accept_Udpate:
+    let
+      /* Local */
+      sur_data = <'SUReq', epoch('T1'), zone('ChildX'), zpkC_New, $CA, $L1, $L2>
+      sur = <sur_data, sur_sig>
+      /* Input */
+      tbsrc = <'TBSCert', zone('ChildX'), $C, zpkC_New, $CA>
+      rcert_data = <tbsrc, $L1, $L2>
+      rc_New = <'RCert', rcert_data, rcert_sig>
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), h(tbsrc)> // locally constructed
+      lcfm_data = <'LogCfmUpdate', $L1, huds>
+      lcfm = <lcfm_data, lcfm_sig>
+    in
+    [
+      C_Upd_1($C, ~zskC, ~zskC_New, sur)
+    , In(<$CA, $C, rc_New, att1, att2, lcfm>)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    , DTMonitor(epoch('T1'), 'Update', logged_htbs)
+    ]
+  --[
+    // the cert is issued by the designated CA
+      Eq(verify(rcert_sig, rcert_data, pkCA), true)
+    // the request is attested by the designated loggers
+    , Eq(verify(att1, <'LogAttestUpdate', h($L1, uds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttestUpdate', h($L2, uds)>, pkL2), true)
+    // the logging operation is further confirmed by a logger
+    , Eq(verify(lcfm_sig, lcfm_data, pkL1), true)
+    , Eq(h(uds), huds)
+    // the monitored log entry is correct
+    , Eq(h(tbsrc), logged_htbs)
+    , ChildZoneUpdated(epoch('T1'), zone('ChildX'), $C, ~zskC, ~zskC_New, $CA, $L1, $L2)
+    , OnlyOnce(<'Child_Accept_Udpate'>)
+    ]->
+    [
+      ZonePublishable(epoch('T2'), zone('ChildX'), $C, ~zskC_New, rc_New)
+    ]
+
+/**
+=========DT Retrieval Protocol=========
+**/
+
+rule DSP_Retrieval:
+    let
+      DSP_Requested = <'DSum', zone, htbs, dlgts> // Unfold to match zone. If there is no match, the rule won't be fired
+    in
+    [
+      DSPReq(~dsrid, epoch, $Client, zone, $L1, $L2)
+    , !Sk($L1, ~skL1)
+    , !Sk($L2, ~skL2)
+    , !DTLog(epoch, DSP_Requested + rest)
+    ]
+  --[
+      IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($L1, $L2)
+    , OnlyOnce(<'DSP_Retrieval', ~dsrid>)
+    ]->
+    [ 
+      DSPResp(~dsrid, $L1, $L2, $Client, <'DSP', epoch, DSP_Requested, sign(<DSP_Requested, epoch>, ~skL1), sign(<DSP_Requested, epoch>, ~skL2)>)
+    ]
+
+/**
+=========DT Aggregation Protocol=========
+**/
+
+// We only model RHINE-specific input validation, abstracting away the consensus rounds of Logres.
+rule DT_Aggregate_T0_New:
+    let
+      /* Input */
+      nds = <epoch('T0'), $CA, $L1, $L2, zone, htbs>
+      lreq_data = <'DTAdd', $L1, nds, att1, att2>
+      lreq = <lreq_data, lreq_sig>
+      /* Local */
+      dsum_P = <'DSum', zone('Parent'), htbsP, <'Delegations', zone('nil'), zone('nil')>>
+      /* Output */
+      dsum_P_updated = <'DSum', zone('Parent'), htbsP, <'Delegations', zone, zone('nil')>>
+      dsum_C = <'DSum', zone, htbs, <'Delegations', zone('nil'), zone('nil')>>
+    in
+    [
+      AggregationQuota(epoch('T0'))
+    , In(<$L1, lreq>)
+    , !DTLog(epoch('T0'), dsum_P + 'nil')
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , Eq(verify(lreq_sig, lreq_data, pkCA), true)
+    , Eq(verify(att1, <'LogAttest', h($L1, nds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttest', h($L2, nds)>, pkL2), true)
+    // TODO: further checking the delegation's legitimacy using local log? This is not specified in the protocol as it is not necessary ... 
+    , OnlyOnce(<'DT_Aggregate_T0'>)
+    ]->
+    [
+      !DTLog(epoch('T1'), dsum_C + dsum_P_updated)
+    , AggregationQuota(epoch('T1'))
+    , DTMonitor(epoch('T0'), 'Setup', htbs)
+    ]
+
+rule DT_Aggregate_T1_New:
+    let
+      /* Input */
+      nds = <epoch('T1'), $CA, $L1, $L2, zone, htbs>
+      lreq_data = <'DTAdd', $L1, nds, att1, att2>
+      lreq = <lreq_data, lreq_sig>
+      /* Local */
+      dsum_P = <'DSum', zone('Parent'), htbsP, <'Delegations', existing_dlgt, zone('nil')>>
+      dsum_C_existing = <'DSum', existing_dlgt, htbsC, <'Delegations', zone('nil'), zone('nil')>>
+      /* Output */
+      dsum_P_updated = <'DSum', zone('Parent'), htbsP, <'Delegations', existing_dlgt, zone>>
+      dsum_C_new = <'DSum', zone, htbs, <'Delegations', zone('nil'), zone('nil')>>
+    in
+    [
+      AggregationQuota(epoch('T1'))
+    , In(<$L1, lreq>)
+    , !DTLog(epoch('T1'), dsum_C_existing + dsum_P)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , Eq(verify(lreq_sig, lreq_data, pkCA), true)
+    , Eq(verify(att1, <'LogAttest', h($L1, nds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttest', h($L2, nds)>, pkL2), true)
+    , OnlyOnce(<'DT_Aggregate_T1'>)
+    ]->
+    [
+      !DTLog(epoch('T2'), dsum_C_existing + dsum_P_updated + dsum_C_new)
+    , DTMonitor(epoch('T1'), 'Setup', htbs)
+    ]
+
+rule DT_Aggregate_T1_Update:
+    let
+      /* Input */
+      uds = <epoch('T1'), $CA, $L1, $L2, zone('ChildX'), htbs_New>
+      lreq_data = <'DTUpdate', $L1, uds, att1, att2>
+      lreq = <lreq_data, lreq_sig>
+      /* Local */
+      dsum_P = <'DSum', zone('Parent'), htbsP, <'Delegations', zone('ChildX'), zone('nil')>>
+      dsum_C_existing = <'DSum', zone('ChildX'), htbsC, <'Delegations', zone('nil'), zone('nil')>>
+      /* Output */
+      dsum_C_new = <'DSum', zone('ChildX'), htbs_New, <'Delegations', zone('nil'), zone('nil')>>
+    in
+    [
+      AggregationQuota(epoch('T1'))
+    , In(<$L1, lreq>)
+    , !DTLog(epoch('T1'), dsum_C_existing + dsum_P)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    , Eq(verify(lreq_sig, lreq_data, pkCA), true)
+    , Eq(verify(att1, <'LogAttestUpdate', h($L1, uds)>, pkL1), true)
+    , Eq(verify(att2, <'LogAttestUpdate', h($L2, uds)>, pkL2), true)
+    , OnlyOnce(<'DT_Aggregate_T1_Update'>)
+    , UpdateLogged(epoch('T1'), zone('ChildX'))
+    ]->
+    [
+      !DTLog(epoch('T2'), dsum_C_new + dsum_P)
+    , DTMonitor(epoch('T1'), 'Update', htbs_New)
+    ]
+
+/* 
+   Resolution:
+*/
+
+// minimal rules for zone data selection
+rule Zone_Record_Generator_PX:
+    [ GenRecord(zone('Parent')) ] --[ ]-> [ Record(zone('Parent'), name('NameX')) ]
+
+// rule Zone_Record_Generator_PY:
+//     [ GenRecord(zone('Parent')) ] --[ ]-> [ Record(zone('Parent'), name('NameY')) ]
+
+rule Zone_Record_Generator_CX:
+    [ GenRecord(zone('ChildX')) ] --[ ]-> [ Record(zone('ChildX'), name('NameX')) ]
+
+// rule Zone_Record_Generator_CY:
+//     [ GenRecord(zone('ChildY')) ] --[ ]-> [ Record(zone('ChildY'), name('NameY')) ]
+
+restriction Naming_Structure:
+  "All zone name #i. NameInZone(zone, name)@i ==> 
+                     (zone = zone('Parent') & name = name('NameX')) |
+                     // (zone = zone('Parent') & name = name('NameY')) |
+                     (zone = zone('ChildX') & name = name('NameX'))
+                     // (zone = zone('ChildY') & name = name('NameY')) 
+                     "
+
+// Obtain the (latest) DSP before publishing data
+rule Zone_Pre_Publish:
+    let 
+      /* Local */
+      // unfold to ensure the loggers retrieve DS from match those specified in the RCert
+      rcert_data = <tbsrc, $L1, $L2>
+      rcert = <'RCert', rcert_data, rcert_sig>
+    in
+    [
+      ZonePublishable(epoch, zone, $Z, ~zsk, rcert) 
+    , Fr(~dsrid)
+    ]
+  --[]->
+    [
+      DSPReq(~dsrid, epoch, $Z, zone, $L1, $L2)
+    , GenRecord(zone)
+    , ZonePrePublish(zone, $Z, ~zsk, rcert, ~dsrid, epoch)
+    ]
+
+rule Zone_Publish:
+    let
+      /* Local */
+      tbsrc = <'TBSCert', zone, $Z, zpk, $CA>
+      rcert_data = <tbsrc, $L1, $L2>
+      rcert = <'RCert', rcert_data, rcert_sig>
+      /* Input */
+      dsum = <'DSum', zone, htbs, <'Delegations', dlgt1, dlgt2>>
+      dsp = <'DSP', epoch, dsum, dsp_sig1, dsp_sig2>
+      /* Output */
+      // we consider an arbitrary name in the child zone
+      // still associate the record with the zone/nameserver providing the answer
+      // associate the record with a timestamp to enforce re-signing by the (malicious) parent after the secure delegation
+      dspset = <'DSPSet', epoch, dsum, dsp_sig1, dsp_sig2>
+      newrec = <'RRecord', zone, epoch, sign(<epoch, zone, name>, ~zsk)>
+      newroa = <'RoA', dspset> // newroa = <'RoA', rcert, dspset>
+    in
+    [
+      DSPResp(~dsrid, $L1, $L2, $Z, dsp)
+    , Record(zone, name)
+    , ZonePrePublish(zone, $Z, ~zsk, rcert, ~dsrid, epoch)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      Eq(verify(dsp_sig1, <dsum, epoch>, pkL1), true) 
+    , Eq(verify(dsp_sig2, <dsum, epoch>, pkL2), true)
+    , Eq(htbs, h(tbsrc))
+    // Allow each zone to be published only once per epoch
+    , OnlyOnce(<'Zone_Publish', zone, epoch>)
+    , ZonePublished(epoch, zone, $Z, zpk, $CA, $L1, $L2)
+    ]->
+    [
+    // Give the adversary knowledge of the newly published data
+    // The simplest way to model the distribution infrastructure: re-purposing Tamarin's state pool as the name records database
+      Out(<'ZoneData', newrec, newroa>)
+    ]
+
+rule User_Query_X:
+    [
+      Fr(~qid)
+    ]
+  --[
+      UserSentQuery($U, ~qid, name('NameX'))
+    ]->
+    [
+      Out(<'NameQuery', ~qid, name('NameX')>)
+    , UserWaitingResp($U, ~qid, name('NameX'))
+    ]
+
+// rule User_Query_Y:
+//     [
+//       Fr(~qid)
+//     ]
+//   --[
+//       UserSentQuery($U, ~qid, name('NameY'))
+//     ]->
+//     [
+//       Out(<'NameQuery', ~qid, name('NameY')>)
+//     , UserWaitingResp($U, ~qid, name('NameY'))
+//     ]
+
+rule User_Receive_Verify:
+    let
+      /* Input */
+      rec = <'RRecord', zone, epoch, rsig>
+      tbsrc = <'TBSCert', zone, $Z, zpk, $CA>
+      rcert_data = <tbsrc, $L1, $L2>
+      rcert = <'RCert', rcert_data, rcert_sig>
+      dsum = <'DSum', zone, htbs, <'Delegations', dlgt1, dlgt2>>
+      dspset = <'DSPSet', epoch, dsum, dsp_sig1, dsp_sig2>
+      roa = <'RoA', rcert, dspset>
+    in
+    [
+      In(<'NameResponse', ~qid, rec, roa>)
+    , UserWaitingResp($U, ~qid, qname)
+    , !Pk($CA, pkCA)
+    , !Pk($L1, pkL1)
+    , !Pk($L2, pkL2)
+    ]
+  --[
+      IsType('Role_Zone', $Z), IsType('Role_CA', $CA), IsType('Role_Logger', $L1), IsType('Role_Logger', $L2)
+    , NotEq($CA, $L1), NotEq($CA, $L2), NotEq($L1, $L2)
+    // The record is intact
+    , Eq(verify(rsig, <epoch, zone, qname>, zpk), true)
+    // RCert is ok
+    , Eq(verify(rcert_sig, rcert_data, pkCA), true)
+    // DSP is ok. The checks in practice are more involved, e.g., no further delegation
+    , Eq(verify(dsp_sig1, <dsum, epoch>, pkL1), true) 
+    , Eq(verify(dsp_sig2, <dsum, epoch>, pkL2), true)
+    , Eq(htbs, h(tbsrc))
+    , Eq(dlgt1, zone('nil'))
+    , Eq(dlgt2, zone('nil'))
+    , NameInZone(zone, qname)
+    , UserAcceptAnswer(epoch, zone, $U, qname, zpk, $CA, $L1, $L2)
+    , OnlyOnce(<'User_Receive_Verify', epoch>)
+    ]->
+    []
+
+/* 
+   Executability check
+*/
+
+lemma Precomputation:
+  exists-trace
+    "Ex epoch childzone P C zpkC #i0.
+       ChildKeyRegistered(epoch, childzone, P, C, zpkC)@i0
+   "
+
+lemma Delegation_Setup_T0:
+  exists-trace
+    "Ex P C zskC CA L1 L2 #i1 #i2 #i3.
+       ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C, pk(zskC))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i3
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+   "
+
+// Only when Child_Init_Select_T1_Y is enabled
+lemma Delegation_Setup_T1:
+  exists-trace
+    "Ex P C zskC CA L1 L2 #i1 #i2 #i3.
+       ChildKeyRegistered(epoch('T1'), zone('ChildY'), P, C, pk(zskC))@i1
+     & ChildRCertRequested(epoch('T1'), zone('ChildY'), P, C, zskC, CA, L1, L2)@i2
+     & ChildZoneDelegated(epoch('T1'), zone('ChildY'), P, C, zskC, CA, L1, L2)@i3
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+  "
+
+lemma Delegation_Setup_Both:
+  exists-trace
+    "Ex P 
+        C_X zskC_X CA_X L1_X L2_X 
+        C_Y zskC_Y CA_Y L1_Y L2_Y
+        #i1 #i2 #i3 #j1 #j2 #j3.
+       ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C_X, pk(zskC_X))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C_X, zskC_X, CA_X, L1_X, L2_X)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_X, zskC_X, CA_X, L1_X, L2_X)@i3
+     & ChildKeyRegistered(epoch('T1'), zone('ChildY'), P, C_Y, pk(zskC_Y))@j1
+     & ChildRCertRequested(epoch('T1'), zone('ChildY'), P, C_Y, zskC_Y, CA_Y, L1_Y, L2_Y)@j2
+     & ChildZoneDelegated(epoch('T1'), zone('ChildY'), P, C_Y, zskC_Y, CA_Y, L1_Y, L2_Y)@j3
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+  "
+
+lemma Delegation_Setup_Update:
+  exists-trace
+    "Ex P 
+        C zskC_0 CA_0 L1_0 L2_0
+                    zskC_1 CA_1 L1_1 L2_1
+        #i1 #i2 #i3 #i4.
+       ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C, pk(zskC_0))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C, zskC_0, CA_0, L1_0, L2_0)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC_0, CA_0, L1_0, L2_0)@i3
+     & ChildZoneUpdated(epoch('T1'), zone('ChildX'), C, zskC_0, zskC_1, CA_1, L1_1, L2_1)@i4
+     & not (zskC_0 = zskC_1)
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+  "
+lemma Normal_Resolution_Parent_T0:
+  exists-trace
+   "Ex P zskP CA_P L1_P L2_P U qid qname #i1 #i2 #i3.
+      ParentZoneInitialized(zone('Parent'), P, zskP, CA_P, L1_P, L2_P)@i1
+    & UserSentQuery(U, qid, qname)@i2
+    & UserAcceptAnswer(epoch('T0'), zone('Parent'), U, qname, pk(zskP), CA_P, L1_P, L2_P)@i3
+    // No compromise of any party
+    & not (Ex A #k. Compromised(A)@k)
+   "
+
+lemma Normal_Resolution_Child_T1:
+  exists-trace
+    "Ex P C zskC CA L1 L2 U qid qname #i1 #i2 #i3 #j1 #j2.
+       ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C, pk(zskC))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i3
+     & UserSentQuery(U, qid, qname)@j1
+     & UserAcceptAnswer(epoch('T1'), zone('ChildX'), U, qname, pk(zskC), CA, L1, L2)@j2
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+   "
+
+// Only when User_Query_Y is enabled
+lemma Normal_Resolution_Child_T2:
+  exists-trace
+    "Ex P C zskC CA L1 L2 U qid qname #i1 #i2 #i3 #j1 #j2.
+       ChildKeyRegistered(epoch('T1'), zone('ChildY'), P, C, pk(zskC))@i1
+     & ChildRCertRequested(epoch('T1'), zone('ChildY'), P, C, zskC, CA, L1, L2)@i2
+     & ChildZoneDelegated(epoch('T1'), zone('ChildY'), P, C, zskC, CA, L1, L2)@i3
+     & UserSentQuery(U, qid, qname)@j1
+     & UserAcceptAnswer(epoch('T2'), zone('ChildY'), U, qname, pk(zskC), CA, L1, L2)@j2
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+   "
+
+lemma Normal_Resolution_Child_T2_Update:
+  exists-trace
+    "Ex P C zskC CA L1 L2 
+                      zskC_N CA_N L1_N L2_N
+        U qid qname #i1 #i2 #i3 #i4 #j1 #j2.
+       ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C, pk(zskC))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i3
+     & ChildZoneUpdated(epoch('T1'), zone('ChildX'), C, zskC, zskC_N, CA_N, L1_N, L2_N)@i4
+     & not (zskC = zskC_N)
+     & UserSentQuery(U, qid, qname)@j1
+     & UserAcceptAnswer(epoch('T2'), zone('ChildX'), U, qname, zskC_N, CA_N, L1_N, L2_N)@j2
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+   "
+
+// Only when User_Query_Y is enabled
+lemma Normal_Resolution_All:
+  exists-trace
+    "Ex P zskP CA_P L1_P L2_P #i0
+        C_X zskC_X CA_X L1_X L2_X #i1 #i2 #i3
+        C_Y zskC_Y CA_Y L1_Y L2_Y #i4 #i5 #i6
+        U1 qid1 qname1 #j1 #j2
+        U2 qid2 qname2 #j3 #j4
+        U3 qid3 qname3 #j5 #j6.
+       ParentZoneInitialized(zone('Parent'), P, zskP, CA_P, L1_P, L2_P)@i0
+     & ChildKeyRegistered(epoch('T0'), zone('ChildX'), P, C_X, pk(zskC_X))@i1
+     & ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C_X, zskC_X, CA_X, L1_X, L2_X)@i2
+     & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_X, zskC_X, CA_X, L1_X, L2_X)@i3
+     & ChildKeyRegistered(epoch('T1'), zone('ChildY'), P, C_Y, pk(zskC_Y))@i4
+     & ChildRCertRequested(epoch('T1'), zone('ChildY'), P, C_Y, zskC_Y, CA_Y, L1_Y, L2_Y)@i5
+     & ChildZoneDelegated(epoch('T1'), zone('ChildY'), P, C_Y, zskC_Y, CA_Y, L1_Y, L2_Y)@i6
+     & UserSentQuery(U1, qid1, qname1)@j1
+     & UserAcceptAnswer(epoch('T0'), zone('Parent'), U1, qname1, pk(zskP), CA_P, L1_P, L2_P)@j2
+     & UserSentQuery(U2, qid2, qname2)@j3
+     & UserAcceptAnswer(epoch('T1'), zone('ChildX'), U2, qname2, pk(zskC_X), CA_X, L1_X, L2_X)@j4
+     & UserSentQuery(U3, qid3, qname3)@j5
+     & UserAcceptAnswer(epoch('T2'), zone('ChildY'), U3, qname3, pk(zskC_Y), CA_Y, L1_Y, L2_Y)@j6
+     // No compromise of any party
+     & not (Ex A #k1. Compromised(A)@k1)
+   "
+
+/*
+    Adversary capability checking
+*/
+
+
+lemma Attack_Fresh_Case_1:
+  exists-trace
+    "Ex epoch childzone P C_0 C zskC_0 zskC CA L1 L2 #i1 #i2 #j.
+       ChildKeyRegistered(epoch, childzone, P, C_0, pk(zskC_0))@i1
+     & ChildZoneDelegated(epoch, childzone, P, C, zskC, CA, L1, L2)@i2
+     & i1 < i2
+     & not (zskC = zskC_0)
+     & Compromised(P)@j
+     & not (Ex #k1 #k2 #k3. Compromised(CA)@k1 & Compromised(L1)@k2 & Compromised(L2)@k3) 
+   "
+
+lemma Attack_Fresh_Case_2:
+  exists-trace
+    "Ex epoch childzone P C_0 C zskC_0 zskC CA L1 L2 #i1 #i2 #k1 #k2 #k3.
+       ChildKeyRegistered(epoch, childzone, P, C_0, pk(zskC_0))@i1
+     & ChildZoneDelegated(epoch, childzone, P, C, zskC, CA, L1, L2)@i2
+     & i1 < i2
+     & not (zskC = zskC_0)
+     & not (Ex #j. Compromised(P)@j)
+     & (Compromised(CA)@k1 & Compromised(L1)@k2 & Compromised(L2)@k3)
+   "
+
+lemma Attack_Delegated_Case_1:
+  exists-trace
+  "Ex P C_0 
+        zskC_0 CA_0 L1_0 L2_0 
+        zskC CA L1 L2 
+        epoch zone U #i1 #i2 #j1 #j2 #j3.
+      // NameInZone(zone('ChildX'), name('NameX'))@i0 // this is a trick to bind qname with the childzone
+      // If a child zone has been securely delegated at T0,
+      ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_0, zskC_0, CA_0, L1_0, L2_0)@i1
+      // and after that a client accepts an answer for a name under the childzone
+      & UserAcceptAnswer(epoch, zone, U, name('NameX'), pk(zskC), CA, L1, L2)@i2
+      // in subsequent epochs
+      & (epoch = epoch('T1') | epoch = epoch('T2')) // T1 or T2 only
+      // but the answer is authenticated using the parent RCert
+      & zone = zone('Parent')
+      & Compromised(P)@j1 & Compromised(L1)@j2 & Compromised(L2)@j3
+      & not (Ex #k. Compromised(CA)@k)
+  "
+
+lemma Attack_Delegated_Case_2:
+  exists-trace
+  "Ex P C_0 
+        zskC_0 CA_0 L1_0 L2_0 
+        zskC CA L1 L2 
+        epoch zone U #i1 #i2 #j1 #j2 #j3.
+      // NameInZone(zone('ChildX'), name('NameX'))@i0 // this is a trick to bind qname with the childzone
+      // If a child zone has been securely delegated at T0,
+      ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_0, zskC_0, CA_0, L1_0, L2_0)@i1
+      // and after that a client accepts an answer for a name under the childzone
+      & UserAcceptAnswer(epoch, zone, U, name('NameX'), pk(zskC), CA, L1, L2)@i2
+      // in subsequent epochs
+      & (epoch = epoch('T1') | epoch = epoch('T2')) // T1 or T2 only
+      // but the answer is authenticated using an alternative child RCert
+      & ( zone = zone('ChildX') & not (zskC_0 = zskC) )
+      & Compromised(CA)@j1 & Compromised(L1)@j2 & Compromised(L2)@j3
+      & not (Ex #k. Compromised(P)@k)
+   "
+
+lemma Attack_Update_1:
+  exists-trace
+  "Ex P C 
+        zskC_0 CA_0 L1_0 L2_0 
+        zskC_1 CA_1 L1_1 L2_1 
+        zskC
+        #i1 #i2 #j1 #j2 #j3.
+      // NameInZone(zone('ChildX'), name('NameX'))@i0 // this is a trick to bind qname with the childzone
+      // If a child zone has been securely delegated at T0,
+      ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC_0, CA_0, L1_0, L2_0)@i1
+      // and after that the zone's key is updated but signed with a different key than the original
+      & ChildZoneUpdated(epoch('T1'), zone('ChildX'), C, zskC, zskC_1, CA_1, L1_1, L2_1)@i2
+      & not (zskC_0 = zskC)
+      & Compromised(CA_1)@j1 & Compromised(L1_1)@j2 & Compromised(L2_1)@j3
+  "
+
+/*
+    Main security properties
+*/
+
+lemma Secure_Delegation_Setup:
+  "All P C zskC CA L1 L2 #i1 #i2.
+    ( // If a childzone is securely delegated in an epoch, 
+      ChildRCertRequested(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i1 // The first fact is not necessary because from the current model
+    & ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C, zskC, CA, L1, L2)@i2  // ChildZoneDelegated implies ChildRCertRequested
+    & i1 < i2
+      // and under the threat model A1+A2+A3 in the current epoch (before i2)
+    & not (Ex #j. Compromised(P)@j & j<i2)
+    & (not (Ex #j. Compromised(L1)@j & j<i2) | not (Ex #j. Compromised(L2)@j & j<i2))
+    )
+    ==>
+    ( // then it must be that the corresponding secure delegation request has been approved by the parent in the same epoch at some early timepoints
+      Ex #i0. 
+        SDApproved(epoch('T0'), zone('ChildX'), P, C, pk(zskC), CA, L1, L2)@i0
+      & i0 < i2
+    )
+  "
+
+lemma Secure_Delegation_Update:
+  "All P C_0 zskC_0 CA_0 L1_0 L2_0 #i1 
+         C_1 zskC_1 CA_1 L1_1 L2_1 #i2
+             zskC.
+    ( // If a childzone is securely delegated in an epoch, 
+      ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_0, zskC_0, CA_0, L1_0, L2_0)@i1 
+      // and updated in a later epoch
+    & ChildZoneUpdated(epoch('T1'), zone('ChildX'), C_1, zskC, zskC_1, CA_1, L1_1, L2_1)@i2
+    // and under the threat model (A1+A2+A3+A4) after the delegation
+    & (not (Ex #j. Compromised(L1_1)@j & i1<j) | not (Ex #j. Compromised(L2_1)@j & i1<j))
+    )
+    ==>
+    ( // then it must be that the corresponding secure delegation update request has been signed by the genuine child key
+      Ex #i3.
+        UpdateRequested(epoch('T1'), zone('ChildX'), C_1, zskC, zskC_1, CA_1, L1_1, L2_1)@i3
+      & zskC = zskC_0
+      & i3 < i2
+    )
+  "
+
+lemma E2E_Authenticity_Robust_Trust:
+  "All P C_0 
+        zskC_0 CA_0 L1_0 L2_0 
+        zskC CA L1 L2 
+        epoch zone U #i1 #i2.
+      ( 
+      // If a child zone has been securely delegated at T0,
+        ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_0, zskC_0, CA_0, L1_0, L2_0)@i1
+      // and after that a client accepts an answer for a name under the childzone
+      & UserAcceptAnswer(epoch, zone, U, name('NameX'), pk(zskC), CA, L1, L2)@i2
+      // in subsequent epochs
+      & (epoch = epoch('T1') | epoch = epoch('T2')) // T1 or T2 only
+      // and there is no update to the zone
+      & not (Ex #j. UpdateLogged(epoch('T1'), zone('ChildX'))@j)
+      & (not (Ex #j. Compromised(L1)@j & i1<j) | not (Ex #j. Compromised(L2)@j & i1<j)) // our model doesn't allow the compromise of child zones (but model malicious child directly), so it's ok to leave the adversary unlimited before i1
+      )
+      ==>
+      ( 
+      // then it must be that the answer is signed using the genuine RCert
+        zone = zone('ChildX')
+      & zskC_0 = zskC
+      & CA_0 = CA
+      & L1_0 = L1
+      & L2_0 = L2
+      )
+   "
+
+lemma E2E_Authenticity_Robust_Trust_With_Update:
+  "All P 
+        C_0 zskC_0 CA_0 L1_0 L2_0 
+        C_1 zskC_1 CA_1 L1_1 L2_1
+        zskC CA L1 L2
+        zone U #i1 #i2 #i3.
+      ( 
+        ChildZoneDelegated(epoch('T0'), zone('ChildX'), P, C_0, zskC_0, CA_0, L1_0, L2_0)@i1
+      & ChildZoneUpdated(epoch('T1'), zone('ChildX'), C_1, zskC_0, zskC_1, CA_1, L1_1, L2_1)@i2
+      & UserAcceptAnswer(epoch('T2'), zone, U, name('NameX'), pk(zskC), CA, L1, L2)@i3
+      & (not (Ex #j. Compromised(L1)@j & i2<j) | not (Ex #j. Compromised(L2)@j & i2<j))
+      )
+      ==>
+      (
+        zone = zone('ChildX')
+      & zskC_1 = zskC
+      & CA_1 = CA
+      & L1_1 = L1
+      & L2_1 = L2
+      )
+   "
+
+end
