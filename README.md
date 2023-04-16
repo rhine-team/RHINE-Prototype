@@ -25,6 +25,11 @@ The used  merkletree implementation is a  changed version of ["github.com/cbergo
 ## How to conduct a test run
 This section explains how to conduct a toy example of the offline authentication prototype using one logger. The benchmark directory contains some configs and keying material with multiple numbers of loggers that can be used instead.
 
+### Compile components
+In the root directory, run: 
+```bash
+make
+```
 
 ### Create keys and certificates
 Each of our component needs a key pair, using either RSA+SHA256 or Ed25519 for signing. Create key pairs for the logger, aggregator, ca and parent using the keyManager:
@@ -51,7 +56,7 @@ go run certGenByCA.go Ed25519 [PrivateKeyPath] [CAKeyPath] [CACertPath] [Certifi
 
 
 ### Setup and start the Loggers
-An example config for the aggregator can be found below and at "cmd/aggregator/configs". "KeyValueDBDirectory" indicates the path where the data base storing our Delegation Transperancy will be located. The Aggregator will initialize it on its own.
+An example config for the logger can be found below and at "cmd/aggregator/configs". "KeyValueDBDirectory" indicates the path where the data base storing our Delegation Transperancy will be located. The Logger will initialize it on its own.
 ```json
 {
     "PrivateKeyAlgorithm": "Ed25519",
@@ -77,8 +82,8 @@ An example config for the aggregator can be found below and at "cmd/aggregator/c
 Note that we need some existing DT data structures for our test run, else the components will not accept our new delegation. Create these the following way:
 ```bash
 # From the offlineAuth directory
-cd cmd/aggregator
-go run run_Aggregator.go AddTestDT --config=[PathToConfigFile] --parent=[ExampleParentZone] --certPath=[PathToTheParentsCertificate]
+cd build
+./logger AddTestDT --config=[PathToConfigFile] --parent=[ExampleParentZone] --certPath=[PathToTheParentsCertificate]
 
 ```
 
@@ -87,9 +92,9 @@ Now we can run our aggregator:
 
 
 ```bash
-# From the offlineAuth directory
-cd cmd/aggregator
-go run run_Aggregator.go --config=[PathToConfigFile]
+# From the root directory
+cd build
+./logger --config=[PathToConfigFile]
 
 ```
 
@@ -113,9 +118,9 @@ To run our CA we provide a configuration file that provides information regardin
 ```
 If not using the example data, key paths, loggers addresses and public keys, etc. need to be set correctly with the previously generated keying material. Note that for this and our other components, the directory described by RootCertsPath, should contain our CA's certificate, indicating that we trust it as a signing authority. To run the CA:
 ```bash
-# From the offlineAuth directory
-cd cmd/ca
-go run run_CA.go --config=[PathToConfigFile]
+# From the root directory
+cd build
+./ca --config=[PathToConfigFile]
 
 ```
 
@@ -126,8 +131,8 @@ The parent server is needed to approve of the initial delegation. A configuratio
 
 ```bash
 # From the offlineAuth directory
-cd cmd/zoneManager
-go run run_zoneManager.go RunParentServer --config=[PathToConfigFile]
+cd build
+./zoneManager RunParentServer --config=[PathToConfigFile]
 
 ```
 

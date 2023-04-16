@@ -16,7 +16,7 @@ ca:
 	go build -o ${BUILD_PATH}ca cmd/ca/run_CA.go
 
 aggregator:
-	go build -o ${BUILD_PATH}aggregator cmd/aggregator/run_Aggregator.go
+	go build -o ${BUILD_PATH}logger cmd/aggregator/run_Aggregator.go
 
 
 .PHONY: all clean zonemanager log ca aggregator

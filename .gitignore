@@ -1,4 +1,4 @@
-offlineAuth/cmd/aggregator/data/badger_database/
-offlineAuth/cmd/log/data/badger_database/
-offlineAuth/benchmark/data/temp/
-offlineAuth/build/
+cmd/aggregator/data/badger_database/
+cmd/log/data/badger_database/
+experiments/data/temp/
+build/

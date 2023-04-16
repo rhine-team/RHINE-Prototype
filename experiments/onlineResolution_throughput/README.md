@@ -1,23 +1,4 @@
-# Benchmarking
-This directory contains helpers and data for benchmarking.
+# Online Resolution Throughput Experiment Data Generation
 
-## Some terminal commands to start components
-../build/aggregator AddDTBatch  --pCertDir data/temp/parentcerts --config data/configs/configAgg2_1.json
-
-../build/aggregator --config=data/configs/configAgg2_1.json
-
-../build/aggregator --config=data/configs/configAgg2_2.json
-
-../build/log --config=data/configs/configLog2_1.json
-
-../build/log --config=data/configs/configLog2_2.json
-
-../build/ca --config=data/configs/configCA.json
-
-
-../build/zoneManager RunParentServer --config=data/configs/parentDummyConfig.json
-
-
-../build/zoneManager RequestDeleg --config data/configs/childDummyConfig.json --output data/certs/delegResultCert.pem --zone 78RHxwinFb7Dhe0.ZN0aO15uHCufrJH.benchmark.ch --privkey data/temp/childrenkeys/78RHxwinFb7Dhe0.ZN0aO15uHCufrJH.benchmark.ch.pem
-
-
+Use generateZoneFiles.go to generate zone files for DNSSEC and RHINE signining. 
+The script also makes core-files for signing and deployment. Configured for four nodes, the setup deploys a large number of server blocks on each node. Adjust the requested dimensions in the code.
